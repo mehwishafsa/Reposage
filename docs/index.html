@@ -4,176 +4,247 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>RepoSage — code relationship visualizer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#0d1117;--panel:#161b22;--panel2:#1c2230;--line:#30363d;
-    --ink:#e6edf3;--dim:#8b949e;--accent:#7ee787;--accent2:#79c0ff;--warn:#f0883e;
-    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --bg:#1a1a1d; --slot:#2a2a2e; --slot-d:#17171a; --slot-l:#3f3f45;
+    --stone:#8b8b8b; --stone-d:#565656; --stone-l:#c6c6c6;
+    --ink:#e8e8e8; --dim:#9a9a9a;
+    --green:#5fd35f; --green-d:#3a8f3a; --blue:#5aa9ff; --gold:#fcd34d;
+    --red:#e05a5a; --red2:#c0392b;
+    --pix:'Press Start 2P',monospace; --read:'VT323',monospace;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);line-height:1.5;
-    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  .wrap{max-width:1180px;margin:0 auto;padding:26px 20px 70px}
-  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
-    border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:20px}
-  h1{font-size:26px;margin:0;letter-spacing:-.5px}
-  h1 .s{color:var(--accent)}
-  .tag{color:var(--dim);font-size:14px}
-  .chip{font-family:var(--mono);font-size:12px;color:var(--accent2);
-    background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:4px 12px}
-  .grid{display:grid;grid-template-columns:minmax(320px,420px) 1fr;gap:18px}
-  @media(max-width:900px){.grid{grid-template-columns:1fr}}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
-  .ph{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-size:15px;font-weight:600}
-  .ph .dot{width:9px;height:9px;border-radius:50%;background:var(--accent)}
-  .ph .sub{font-size:12px;color:var(--dim);font-weight:400}
-  textarea{width:100%;height:300px;resize:vertical;background:#0b0f16;color:#c9d1d9;
-    border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--mono);
-    font-size:12.5px;outline:none}
-  textarea:focus{border-color:var(--accent2)}
-  .row{display:flex;gap:10px;margin-top:10px}
-  button{border:0;border-radius:9px;padding:10px 16px;font-weight:600;font-size:14px;cursor:pointer}
-  .primary{background:var(--accent);color:#06210e;flex:1}
-  .ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
-  #flowWrap{overflow:auto;background:#0b0f16;border:1px solid var(--line);border-radius:10px;
-    min-height:340px;max-height:520px}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:var(--read);font-size:19px;line-height:1.35;
+    background-image:
+      linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:18px 18px;}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 18px 70px}
+
+  /* header = grass block */
+  header{position:relative;padding:18px 20px;margin-bottom:20px;
+    background:#6b4a2f;
+    border-top:8px solid #7fb238;
+    box-shadow:inset -4px -4px 0 #4a3220, inset 4px 4px 0 #8a6242, 0 0 0 4px #000;}
+  h1{font-family:var(--pix);font-size:24px;margin:0;color:#fff;
+    text-shadow:3px 3px 0 #222, 0 0 0 #000;letter-spacing:1px}
+  h1 .s{color:var(--green)}
+  .tag{font-size:20px;color:#e8d9c5;margin-top:8px;display:block}
+
+  .mc-btn{font-family:var(--pix);font-size:11px;color:#fff;text-shadow:2px 2px 0 #202020;
+    background:#7f7f7f;border:none;padding:13px 15px;cursor:pointer;
+    box-shadow:inset -3px -3px 0 #3f3f3f, inset 3px 3px 0 #c6c6c6, 0 0 0 3px #000;}
+  .mc-btn:hover{background:#6f8f5f;color:#fbffb0;
+    box-shadow:inset -3px -3px 0 #2e3d24, inset 3px 3px 0 #a6d68a, 0 0 0 3px #000;}
+  .mc-btn:active{box-shadow:inset 3px 3px 0 #3f3f3f, inset -3px -3px 0 #c6c6c6, 0 0 0 3px #000;}
+  .mc-btn.gold{background:#b8901f}
+  .mc-btn.gold:hover{background:#d4a72a;color:#fff}
+
+  .panel{background:var(--slot);padding:16px;margin-bottom:16px;
+    box-shadow:inset -4px -4px 0 var(--slot-d), inset 4px 4px 0 var(--slot-l), 0 0 0 3px #000, 0 0 0 7px var(--stone-d);}
+  .ph{font-family:var(--pix);font-size:12px;margin:2px 0 14px;color:#fff;
+    text-shadow:2px 2px 0 #111;display:flex;align-items:center;gap:9px}
+  .ph .cube{width:12px;height:12px;background:var(--green);box-shadow:2px 2px 0 #2c6b2c}
+  .ph .sub{font-family:var(--read);font-size:17px;color:var(--dim);text-shadow:none}
+
+  .grid{display:grid;grid-template-columns:minmax(320px,440px) 1fr;gap:16px}
+  @media(max-width:920px){.grid{grid-template-columns:1fr}}
+
+  textarea{width:100%;height:250px;resize:vertical;background:#101013;color:#cfe6cf;
+    border:none;padding:12px;font-family:var(--read);font-size:17px;outline:none;
+    box-shadow:inset 3px 3px 0 #000, inset -2px -2px 0 #333;}
+  input[type=text]{background:#101013;color:#cfe6cf;border:none;padding:12px;
+    font-family:var(--read);font-size:18px;outline:none;flex:1;
+    box-shadow:inset 3px 3px 0 #000, inset -2px -2px 0 #333;}
+  .row{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+  .row .mc-btn{flex:1;min-width:120px}
+
+  /* github loader */
+  .gh{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .gh input{flex:1;min-width:200px}
+  #ghStatus{font-size:17px;color:var(--gold);margin-top:6px;min-height:22px}
+
+  #flowWrap{overflow:auto;background:#101013;min-height:340px;max-height:540px;
+    box-shadow:inset 3px 3px 0 #000, inset -2px -2px 0 #333;}
   svg{display:block}
-  .node rect{stroke:var(--line);fill:var(--panel2)}
-  .node text{fill:var(--ink);font-family:var(--mono);font-size:12px}
-  .node.hl rect{stroke:var(--accent);fill:#12351d}
-  .node.hl text{fill:var(--accent)}
-  .edge{stroke:#3a4657;stroke-width:1.6;fill:none}
-  .edge.hl{stroke:var(--accent2);stroke-width:2.2}
-  .askrow{display:flex;gap:10px;margin:18px 0 10px}
-  #q{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--ink);
-    border-radius:10px;padding:12px 14px;font-size:15px;outline:none}
-  #q:focus{border-color:var(--accent2)}
+  .node rect{stroke:#000;stroke-width:3;fill:#6a6a6a;cursor:pointer}
+  .node text{fill:#fff;font-family:var(--read);font-size:17px;pointer-events:none}
+  .node.ret rect{fill:#2f5f9e} .node.exp rect{fill:#2e7d32}
+  .node.impact rect{fill:#a83232} .node.focus rect{fill:#b8901f;stroke:#fff;stroke-width:4}
+  .node.orphan rect{stroke-dasharray:5 4}
+  .edge{stroke:#4a4a4a;stroke-width:2.5;fill:none}
+  .edge.hl{stroke:var(--blue);stroke-width:3.5}
+  .edge.imp{stroke:#e05a5a;stroke-width:3.5}
+
+  .foot{color:var(--dim);font-size:16px;margin-top:8px}
+  .foot b{color:var(--blue)}
+
+  .askrow{display:flex;gap:10px;margin:6px 0 12px;flex-wrap:wrap}
   .examples{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
-  .ex{font-size:12.5px;color:var(--dim);background:var(--panel);border:1px solid var(--line);
-    border-radius:8px;padding:5px 10px;cursor:pointer}
-  .ex:hover{border-color:var(--accent2);color:var(--ink)}
-  .answer{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
-    padding:13px 15px;font-size:14px;margin-bottom:16px}
-  .answer b{color:var(--accent)}
+  .ex{font-size:16px;color:#cfe6cf;background:#2a2a2e;padding:6px 11px;cursor:pointer;
+    box-shadow:inset -2px -2px 0 var(--slot-d), inset 2px 2px 0 var(--slot-l), 0 0 0 2px #000;}
+  .ex:hover{color:var(--gold)}
+
+  .answer{background:#2a2a2e;padding:13px 15px;margin-bottom:16px;font-size:19px;
+    box-shadow:inset -3px -3px 0 var(--slot-d), inset 3px 3px 0 var(--slot-l), 0 0 0 3px #000;}
+  .answer b{color:var(--green)}
+
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   @media(max-width:760px){.cols{grid-template-columns:1fr}}
-  .sub2{border:1px solid var(--line);border-radius:12px;padding:14px}
-  .sub2.win{border-color:#2ea04366;box-shadow:0 0 0 1px #2ea04322}
-  .sub2 h3{margin:0 0 4px;font-size:14px;display:flex;align-items:center;gap:7px}
-  .sub2 h3 .d{width:8px;height:8px;border-radius:50%}
-  .good .d{background:var(--accent)} .bad .d{background:var(--warn)}
-  .sub2 .cap{font-size:11.5px;color:var(--dim);margin:0 0 12px}
-  .fn{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:13px;
-    padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px}
-  .fn .nm{color:var(--accent2)} .fn .loc{color:var(--dim);font-size:11px;margin-left:auto}
-  .badge{font-size:10px;padding:2px 7px;border-radius:12px;font-weight:700}
-  .b-ret{background:#1f6feb33;color:var(--accent2);border:1px solid #1f6feb66}
-  .b-exp{background:#2ea04333;color:var(--accent);border:1px solid #2ea04366}
-  .empty{color:var(--dim);font-style:italic;font-size:13px}
-  .foot{color:var(--dim);font-size:12px;margin-top:8px}
+  .fn{display:flex;align-items:center;gap:8px;font-size:18px;padding:8px 10px;margin-bottom:7px;
+    background:#232327;box-shadow:inset -2px -2px 0 #141416, inset 2px 2px 0 #34343a, 0 0 0 2px #000;}
+  .fn .nm{color:var(--blue)} .fn .loc{color:var(--dim);font-size:15px;margin-left:auto}
+  .badge{font-family:var(--pix);font-size:8px;padding:4px 6px;color:#fff}
+  .b-ret{background:#2f5f9e} .b-exp{background:#2e7d32} .b-imp{background:#a83232}
+  .empty{color:var(--dim)}
+  .cap{font-size:16px;color:var(--dim);margin:8px 0 6px}
+
+  /* detail panel */
+  #detail{display:none}
+  #detail.on{display:block}
+  #detail pre{background:#101013;padding:12px;overflow:auto;max-height:220px;
+    font-family:var(--read);font-size:17px;color:#cfe6cf;
+    box-shadow:inset 3px 3px 0 #000;margin:8px 0}
+  .warn{color:#f0b429;font-size:19px}
+  .deplist{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .pill{font-size:16px;padding:4px 9px;background:#232327;box-shadow:0 0 0 2px #000}
+  .pill.imp{color:#f08a7a} .pill.dep{color:#9fd39f}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>Repo<span class="s">Sage</span></h1>
-    <span class="tag">paste code → see how it connects → ask questions</span>
-    <span class="chip" id="stats">—</span>
+    <span class="tag">paste code → build the map → ask questions → see what breaks</span>
   </header>
+
+  <!-- GitHub loader -->
+  <div class="panel">
+    <p class="ph"><span class="cube"></span>Load a repo
+      <span class="sub">· paste a GitHub URL to map a whole project</span></p>
+    <div class="gh">
+      <input type="text" id="ghUrl" value="mehwishafsa/Reposage" placeholder="https://github.com/owner/repo  (e.g. psf/requests)"/>
+      <button class="mc-btn" onclick="loadGitHub()">FETCH REPO</button>
+    </div>
+    <div id="ghStatus"></div>
+  </div>
 
   <div class="grid">
     <div class="panel">
-      <p class="ph"><span class="dot"></span>Your code
+      <p class="ph"><span class="cube"></span>Your code
         <span class="sub">· paste Python, hit Analyze</span></p>
       <textarea id="code" spellcheck="false"></textarea>
       <div class="row">
-        <button class="primary" onclick="analyze()">Analyze</button>
-        <button class="ghost" onclick="loadSample()">Load sample</button>
+        <button class="mc-btn" onclick="analyze()">ANALYZE</button>
+        <button class="mc-btn" onclick="loadSample()">LOAD SAMPLE</button>
       </div>
     </div>
 
     <div class="panel">
-      <p class="ph"><span class="dot"></span>Code relationship map
-        <span class="sub" id="flowsub">· call graph / flowchart</span></p>
+      <p class="ph"><span class="cube"></span>Code map
+        <span class="sub" id="flowsub">· click any block to inspect it</span></p>
       <div id="flowWrap"><svg id="flow"></svg></div>
-      <p class="foot">Arrows show <b style="color:var(--accent2)">who calls whom</b>. Ask a question below and the relevant path lights up.</p>
+      <p class="foot">Arrows = <b>who calls whom</b>. Click a block → see what breaks if you change it. Ask below → the path lights up.</p>
     </div>
   </div>
 
-  <div class="askrow">
-    <input id="q" placeholder="Ask about this code…" value="What happens end to end when a user logs in?"/>
-    <button class="primary" style="flex:0 0 auto;padding:12px 22px" onclick="ask()">Ask</button>
+  <!-- detail / impact -->
+  <div class="panel" id="detail">
+    <p class="ph"><span class="cube" style="background:var(--gold);box-shadow:2px 2px 0 #8a6a12"></span>
+      <span id="detailName">function</span>
+      <button class="mc-btn" style="margin-left:auto;padding:8px 12px" onclick="clearFocus()">CLOSE</button></p>
+    <p class="warn" id="impactLine"></p>
+    <div class="deplist" id="impactList"></div>
+    <p class="cap" style="margin-top:14px">This function depends on:</p>
+    <div class="deplist" id="depList"></div>
+    <pre id="detailSrc"></pre>
   </div>
-  <div class="examples" id="ex"></div>
 
-  <div class="answer" id="answer"><span class="empty">Ask a question to trace the code path.</span></div>
-
-  <div class="cols">
-    <div class="sub2 win good">
-      <h3><span class="d"></span>RepoSage</h3>
-      <p class="cap">AST-style chunks + follows the call graph across functions</p>
-      <div id="rs"><span class="empty">—</span></div>
+  <!-- Q&A -->
+  <div class="panel">
+    <p class="ph"><span class="cube"></span>Ask the codebase</p>
+    <div class="askrow">
+      <input type="text" id="q" value="What happens end to end when a user logs in?"/>
+      <button class="mc-btn" onclick="ask()">ASK</button>
     </div>
-    <div class="sub2 bad">
-      <h3><span class="d"></span>Plain keyword search</h3>
-      <p class="cap">flat matches — no idea the functions are related</p>
-      <div id="kw"><span class="empty">—</span></div>
+    <div class="examples" id="ex"></div>
+    <div class="answer" id="answer"><span class="empty">Ask a question to trace the code path.</span></div>
+    <div class="cols">
+      <div>
+        <p class="ph" style="font-size:10px"><span class="cube"></span>RepoSage
+          <span class="sub">follows the call graph</span></p>
+        <div id="rs"><span class="empty">—</span></div>
+      </div>
+      <div>
+        <p class="ph" style="font-size:10px"><span class="cube" style="background:#c0392b;box-shadow:2px 2px 0 #7a2318"></span>Keyword search
+          <span class="sub">flat matches only</span></p>
+        <div id="kw"><span class="empty">—</span></div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-/* ---------------- analyzer (inlined) ---------------- */
-function parsePython(code){
-  const lines=code.replace(/\t/g,"    ").split("\n"), funcs=[];
-  const defRe=/^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/, clsRe=/^(\s*)class\s+([A-Za-z_]\w*)/;
+/* ================= analyzer ================= */
+function parsePython(code,file){file=file||"pasted";
+  const lines=code.replace(/\t/g,"    ").split("\n"),funcs=[];
+  const defRe=/^(\s*)(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(/,clsRe=/^(\s*)class\s+([A-Za-z_]\w*)/;
   for(let i=0;i<lines.length;i++){
     let m=lines[i].match(defRe),kind="function";
     if(!m){m=lines[i].match(clsRe);if(m)kind="class";}
     if(!m)continue;
     const indent=m[1].length,name=m[2],start=i;let end=i;
-    for(let j=i+1;j<lines.length;j++){
-      const ln=lines[j];
+    for(let j=i+1;j<lines.length;j++){const ln=lines[j];
       if(ln.trim()===""){end=j;continue;}
       const ind=ln.match(/^(\s*)/)[1].length;
-      if(ind>indent)end=j;else break;
-    }
+      if(ind>indent)end=j;else break;}
     const source=lines.slice(start,end+1).join("\n").replace(/\s+$/,"");
-    funcs.push({name,kind,start:start+1,end:end+1,source,file:"pasted"});
-  }
-  return funcs;
-}
-function buildModel(code){
-  const funcs=parsePython(code),defined=new Set(funcs.map(f=>f.name));
-  funcs.forEach(f=>{
-    const calls=new Set(),re=/([A-Za-z_]\w*)\s*\(/g;let m;
+    funcs.push({name,kind,start:start+1,end:end+1,source,file});}
+  return funcs;}
+function buildModelFromFiles(files){
+  let funcs=[];files.forEach(f=>{funcs=funcs.concat(parsePython(f.content,f.path));});
+  const byName={};funcs.forEach(f=>{if(!byName[f.name])byName[f.name]=f;});
+  const defined=new Set(Object.keys(byName));
+  funcs.forEach(f=>{const calls=new Set(),re=/([A-Za-z_]\w*)\s*\(/g;let m;
     while((m=re.exec(f.source))!==null){if(defined.has(m[1])&&m[1]!==f.name)calls.add(m[1]);}
-    f.calls=[...calls];
-  });
-  const edges=[];funcs.forEach(f=>f.calls.forEach(c=>edges.push([f.name,c])));
-  return {funcs,edges};
-}
+    f.calls=[...calls];});
+  const edges=[];funcs.forEach(f=>f.calls.forEach(c=>{if(byName[c])edges.push([f.name,c]);}));
+  return {funcs,edges,byName};}
+function buildModel(code){return buildModelFromFiles([{path:"pasted",content:code}]);}
+function reachable(start,edges,rev){const adj={};
+  edges.forEach(([u,v])=>{const a=rev?v:u,b=rev?u:v;(adj[a]=adj[a]||[]).push(b);});
+  const seen=new Set(),st=[start];
+  while(st.length){const n=st.pop();(adj[n]||[]).forEach(m=>{if(!seen.has(m)&&m!==start){seen.add(m);st.push(m);}});}
+  return [...seen];}
+function impactOf(n,e){return reachable(n,e,true);}
+function dependsOn(n,e){return reachable(n,e,false);}
+function parseGitHubUrl(u){u=u.trim().replace(/\.git$/,"").replace(/\/$/,"");
+  let m=u.match(/github\.com\/([^\/]+)\/([^\/]+)/);if(m)return{owner:m[1],repo:m[2]};
+  m=u.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);if(m)return{owner:m[1],repo:m[2]};
+  return null;}
+
+/* ---- retrieval ---- */
 function tokenize(t){const o=[],re=/[A-Za-z_][A-Za-z0-9_]*/g;let m;
   while((m=re.exec(t.toLowerCase()))!==null){
     m[0].split("_").forEach(p=>{if(p){o.push(p);
       if(p.length>3&&p.endsWith("s")&&!p.endsWith("ss"))o.push(p.slice(0,-1));}});
     o.push(m[0]);}return o;}
-function buildIndex(funcs){
-  const df={},tfs=funcs.map(f=>{const c={};tokenize(f.name+" "+f.source).forEach(t=>c[t]=(c[t]||0)+1);
+function buildIndex(funcs){const df={},tfs=funcs.map(f=>{const c={};
+    tokenize(f.name+" "+f.source).forEach(t=>c[t]=(c[t]||0)+1);
     Object.keys(c).forEach(t=>df[t]=(df[t]||0)+1);return c;});
   const n=Math.max(funcs.length,1),idf={};Object.keys(df).forEach(t=>idf[t]=Math.log((n+1)/(df[t]+1))+1);
   const vecs=tfs.map(tf=>{const v={};Object.keys(tf).forEach(t=>v[t]=tf[t]*(idf[t]||0));return v;});
   const norms=vecs.map(v=>Math.sqrt(Object.values(v).reduce((s,x)=>s+x*x,0))||1);
-  return {idf,vecs,norms};
-}
-function search(query,funcs,index,k){k=k||3;
-  const qc={};tokenize(query).forEach(t=>qc[t]=(qc[t]||0)+1);
+  return {idf,vecs,norms};}
+function search(query,funcs,index,k){k=k||3;const qc={};tokenize(query).forEach(t=>qc[t]=(qc[t]||0)+1);
   const qv={};Object.keys(qc).forEach(t=>qv[t]=qc[t]*(index.idf[t]||0));
   const qn=Math.sqrt(Object.values(qv).reduce((s,x)=>s+x*x,0))||1;
   return funcs.map((f,i)=>{const v=index.vecs[i];let dot=0;
     Object.keys(qv).forEach(t=>{if(v[t])dot+=qv[t]*v[t];});return {f,s:dot/(qn*index.norms[i])};})
-    .filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,k).map(x=>x.f);
-}
+    .filter(x=>x.s>0).sort((a,b)=>b.s-a.s).slice(0,k).map(x=>x.f);}
 function keywordSearch(query,funcs,k){k=k||3;const q=new Set(tokenize(query));
   return funcs.map(f=>({f,o:tokenize(f.source+" "+f.name).filter(t=>q.has(t)).length}))
     .filter(x=>x.o>0).sort((a,b)=>b.o-a.o).slice(0,k).map(x=>x.f);}
@@ -181,52 +252,57 @@ function expandGraph(hitNames,edges,k){k=k||8;const set=new Set(hitNames),added=
   edges.forEach(([u,v])=>{if(set.has(u)&&!set.has(v)){set.add(v);added.push(v);}
     if(set.has(v)&&!set.has(u)){set.add(u);added.push(u);}});return added.slice(0,k);}
 
-/* ---------------- flowchart layout + render ---------------- */
+/* ================= flowchart ================= */
 function layout(funcs,edges){
   const nodes=funcs.map(f=>f.name),level={};nodes.forEach(n=>level[n]=0);
   for(let it=0;it<nodes.length;it++){let ch=false;
     edges.forEach(([u,v])=>{if(level[u]!==undefined&&level[v]!==undefined&&level[v]<level[u]+1&&level[u]+1<=nodes.length){level[v]=level[u]+1;ch=true;}});
     if(!ch)break;}
   const byL={};nodes.forEach(n=>{(byL[level[n]]=byL[level[n]]||[]).push(n);});
-  const NW=150,NH=40,HG=26,VG=60,PAD=26;
+  const NW=168,NH=42,HG=26,VG=62,PAD=26;
   const levels=Object.keys(byL).map(Number).sort((a,b)=>a-b);
   const maxCount=Math.max(1,...levels.map(l=>byL[l].length));
-  const width=PAD*2+maxCount*(NW+HG)-HG, pos={};
+  const width=PAD*2+maxCount*(NW+HG)-HG,pos={};
   levels.forEach(l=>{const row=byL[l],rowW=row.length*(NW+HG)-HG,x0=(width-rowW)/2;
     row.forEach((n,i)=>{pos[n]={x:x0+i*(NW+HG),y:PAD+l*(NH+VG)};});});
   const height=PAD*2+(levels.length?(Math.max(...levels)*(NH+VG)+NH):NH);
-  return {pos,width,height,NW,NH};
-}
-function renderFlow(model,highlight){
-  highlight=highlight||new Set();
-  const {funcs,edges}=model;
-  const svg=document.getElementById("flow");
-  if(!funcs.length){svg.innerHTML='<text x="20" y="40" fill="#8b949e" font-family="monospace">No functions found — paste some Python and hit Analyze.</text>';
-    svg.setAttribute("width",400);svg.setAttribute("height",80);return;}
+  return {pos,width,height,NW,NH};}
+function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function short(n){return n.length>18?n.slice(0,17)+"…":n;}
+
+let HL={focus:null,impact:new Set(),retrieved:new Set(),expanded:new Set(),orphans:new Set()};
+function renderFlow(model){
+  const svg=document.getElementById("flow");const {funcs,edges}=model;
+  if(!funcs.length){svg.innerHTML='<text x="20" y="44" fill="#9a9a9a" font-family="VT323" font-size="20">No functions found — paste Python and hit ANALYZE.</text>';
+    svg.setAttribute("width",500);svg.setAttribute("height",90);return;}
   const {pos,width,height,NW,NH}=layout(funcs,edges);
   svg.setAttribute("width",Math.max(width,300));svg.setAttribute("height",height);
   svg.setAttribute("viewBox",`0 0 ${Math.max(width,300)} ${height}`);
   let s=`<defs>
-    <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
-      <path d="M0,0 L7,3 L0,6 Z" fill="#3a4657"/></marker>
-    <marker id="arh" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
-      <path d="M0,0 L7,3 L0,6 Z" fill="#79c0ff"/></marker></defs>`;
-  edges.forEach(([u,v])=>{
-    if(!pos[u]||!pos[v])return;
-    const x1=pos[u].x+NW/2,y1=pos[u].y+NH,x2=pos[v].x+NW/2,y2=pos[v].y;
-    const hl=highlight.has(u)&&highlight.has(v);
-    const my=(y1+y2)/2;
-    s+=`<path class="edge${hl?' hl':''}" d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}" marker-end="url(#${hl?'arh':'ar'})"/>`;
-  });
-  funcs.forEach(f=>{const p=pos[f.name];if(!p)return;const hl=highlight.has(f.name);
-    s+=`<g class="node${hl?' hl':''}"><rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}" rx="8"/>
-      <text x="${p.x+NW/2}" y="${p.y+NH/2+4}" text-anchor="middle">${esc(f.name)}()</text></g>`;});
-  svg.innerHTML=s;
-}
+    <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4a4a4a"/></marker>
+    <marker id="arb" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5aa9ff"/></marker>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#e05a5a"/></marker></defs>`;
+  const inImp=n=>HL.impact.has(n)||n===HL.focus;
+  const inQ=n=>HL.retrieved.has(n)||HL.expanded.has(n);
+  edges.forEach(([u,v])=>{if(!pos[u]||!pos[v])return;
+    const x1=pos[u].x+NW/2,y1=pos[u].y+NH,x2=pos[v].x+NW/2,y2=pos[v].y,my=(y1+y2)/2;
+    let cls="edge",mk="ar";
+    if(inImp(u)&&inImp(v)){cls="edge imp";mk="arr";}
+    else if(inQ(u)&&inQ(v)){cls="edge hl";mk="arb";}
+    s+=`<path class="${cls}" d="M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}" marker-end="url(#${mk})"/>`;});
+  funcs.forEach(f=>{const p=pos[f.name];if(!p)return;const n=f.name;
+    let cls="node";
+    if(n===HL.focus)cls+=" focus";
+    else if(HL.impact.has(n))cls+=" impact";
+    else if(HL.expanded.has(n))cls+=" exp";
+    else if(HL.retrieved.has(n))cls+=" ret";
+    if(HL.orphans.has(n))cls+=" orphan";
+    s+=`<g class="${cls}" onclick="focusNode('${n}')"><rect x="${p.x}" y="${p.y}" width="${NW}" height="${NH}"/>
+      <text x="${p.x+NW/2}" y="${p.y+NH/2+6}" text-anchor="middle">${esc(short(n))}()</text></g>`;});
+  svg.innerHTML=s;}
 
-/* ---------------- app state ---------------- */
-let MODEL={funcs:[],edges:[]}, INDEX=null;
-function esc(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+/* ================= app ================= */
+let MODEL={funcs:[],edges:[]},INDEX=null;
 
 const SAMPLE=`import time
 from db import get_user, hash_password, save_user
@@ -279,53 +355,102 @@ const exBox=document.getElementById("ex");
 EXAMPLES.forEach(t=>{const b=document.createElement("div");b.className="ex";b.textContent=t;
   b.onclick=()=>{document.getElementById("q").value=t;ask();};exBox.appendChild(b);});
 
-function loadSample(){document.getElementById("code").value=SAMPLE;analyze();}
-function analyze(){
-  const code=document.getElementById("code").value;
-  MODEL=buildModel(code);INDEX=buildIndex(MODEL.funcs);
-  document.getElementById("stats").textContent=
-    `${MODEL.funcs.length} functions · ${MODEL.edges.length} call edges`;
-  renderFlow(MODEL,new Set());
+function resetHL(){HL={focus:null,impact:new Set(),retrieved:new Set(),expanded:new Set(),orphans:new Set()};}
+function analyzeModel(model){
+  MODEL=model;INDEX=buildIndex(MODEL.funcs);
+  resetHL();renderFlow(MODEL);
   document.getElementById("answer").innerHTML='<span class="empty">Ask a question to trace the code path.</span>';
   document.getElementById("rs").innerHTML='<span class="empty">—</span>';
   document.getElementById("kw").innerHTML='<span class="empty">—</span>';
+  clearFocus();
 }
-function fnCard(f,kind){
-  const badge=kind==='exp'?'<span class="badge b-exp">via call graph</span>':'<span class="badge b-ret">retrieved</span>';
-  return `<div class="fn"><span class="nm">${esc(f.name)}()</span>${badge}<span class="loc">line ${f.start}</span></div>`;
+function analyze(){analyzeModel(buildModel(document.getElementById("code").value));}
+function loadSample(){document.getElementById("code").value=SAMPLE;analyze();}
+
+/* ---- click a node: impact analysis ---- */
+function focusNode(name){
+  const f=MODEL.funcs.find(x=>x.name===name);if(!f)return;
+  const imp=impactOf(name,MODEL.edges), dep=dependsOn(name,MODEL.edges);
+  resetHL();HL.focus=name;HL.impact=new Set(imp);
+  renderFlow(MODEL);
+  const d=document.getElementById("detail");d.classList.add("on");
+  document.getElementById("detailName").textContent=name+"()  ·  "+f.file+":"+f.start;
+  document.getElementById("impactLine").innerHTML= imp.length
+    ? `⚠ Changing this would affect <b>${imp.length}</b> function(s):`
+    : `✔ Nothing else calls this — safe to change in isolation.`;
+  document.getElementById("impactList").innerHTML=imp.map(n=>`<span class="pill imp" onclick="focusNode('${n}')">${esc(n)}()</span>`).join("");
+  document.getElementById("depList").innerHTML= dep.length
+    ? dep.map(n=>`<span class="pill dep" onclick="focusNode('${n}')">${esc(n)}()</span>`).join("")
+    : '<span class="empty">nothing</span>';
+  document.getElementById("detailSrc").textContent=f.source;
+  document.getElementById("detail").scrollIntoView({behavior:"smooth",block:"nearest"});
 }
+function clearFocus(){document.getElementById("detail").classList.remove("on");
+  if(HL.focus){HL.focus=null;HL.impact=new Set();renderFlow(MODEL);}}
+
+/* ---- ask ---- */
+function fnCard(f,kind){const badge=kind==='exp'?'<span class="badge b-exp">GRAPH</span>':'<span class="badge b-ret">FOUND</span>';
+  return `<div class="fn"><span class="nm">${esc(f.name)}()</span>${badge}<span class="loc">${esc(f.file)}:${f.start}</span></div>`;}
 function ask(){
-  if(!INDEX||!MODEL.funcs.length){analyze();}
+  if(!INDEX||!MODEL.funcs.length)analyze();
   const q=document.getElementById("q").value.trim();if(!q)return;
-  const hits=search(q,MODEL.funcs,INDEX,3);
-  const hitNames=hits.map(f=>f.name);
+  const hits=search(q,MODEL.funcs,INDEX,3),hitNames=hits.map(f=>f.name);
   const expNames=expandGraph(hitNames,MODEL.edges,8);
   const byName={};MODEL.funcs.forEach(f=>byName[f.name]=f);
   const expanded=expNames.map(n=>byName[n]).filter(Boolean);
   const kw=keywordSearch(q,MODEL.funcs,3);
-  const hlSet=new Set([...hitNames,...expNames]);
-  renderFlow(MODEL,hlSet);
-
-  // deterministic execution-path answer
-  const top=hits[0];
-  let ans;
-  if(top){
-    const chain=[]; const seen=new Set([top.name]);
+  resetHL();HL.retrieved=new Set(hitNames);HL.expanded=new Set(expNames);
+  renderFlow(MODEL);
+  const top=hits[0];let ans;
+  if(top){const chain=[],seen=new Set([top.name]);
     (function walk(name,depth){if(depth>2)return;const f=byName[name];if(!f)return;
       f.calls.forEach(c=>{if(!seen.has(c)){seen.add(c);chain.push([name,c]);walk(c,depth+1);}});})(top.name,0);
     const called=[...new Set(chain.map(e=>e[1]))];
-    ans=`Entry point is <b>${esc(top.name)}()</b> (line ${top.start}). `+
-      (called.length?`Following the call graph, it reaches: ${called.map(c=>'<b>'+esc(c)+'()</b>').join(', ')}. `:'')+
-      `RepoSage connected <b>${hlSet.size}</b> function(s) across the file — the keyword search below sees only isolated matches.`;
-  }else{ans='<span class="empty">No relevant functions found for that question.</span>';}
+    ans=`Entry point is <b>${esc(top.name)}()</b> (${esc(top.file)}:${top.start}). `+
+      (called.length?`Following the call graph it reaches: ${called.map(c=>'<b>'+esc(c)+'()</b>').join(', ')}. `:'')+
+      `RepoSage connected <b>${HL.retrieved.size+HL.expanded.size}</b> function(s) — keyword search sees only isolated matches.`;
+  }else ans='<span class="empty">No relevant functions found.</span>';
   document.getElementById("answer").innerHTML=ans;
-
   document.getElementById("rs").innerHTML=
     (hits.map(f=>fnCard(f,'ret')).join('')||'<span class="empty">none</span>')+
-    (expanded.length?('<p class="cap" style="margin:10px 0 6px">pulled in by following the call graph:</p>'+expanded.map(f=>fnCard(f,'exp')).join('')):'');
+    (expanded.length?('<p class="cap">pulled in via the call graph:</p>'+expanded.map(f=>fnCard(f,'exp')).join('')):'');
   document.getElementById("kw").innerHTML=
     (kw.map(f=>fnCard(f,'ret')).join('')||'<span class="empty">no matches</span>')+
-    '<p class="cap" style="margin-top:10px">↑ flat matches only — disconnected.</p>';
+    '<p class="cap">↑ flat matches — disconnected.</p>';
+}
+
+/* ---- GitHub loader ---- */
+async function loadGitHub(){
+  const raw=document.getElementById("ghUrl").value;
+  const st=document.getElementById("ghStatus");
+  const gh=parseGitHubUrl(raw);
+  if(!gh){st.textContent="⚠ Couldn't read that — use owner/repo or a full github.com URL.";return;}
+  st.textContent=`Fetching ${gh.owner}/${gh.repo} …`;
+  try{
+    const mr=await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}`);
+    if(mr.status===403 && mr.headers.get("x-ratelimit-remaining")==="0"){
+      const reset=new Date(+mr.headers.get("x-ratelimit-reset")*1000);
+      st.textContent=`⚠ GitHub's free API limit (60/hr) is used up on this network. Resets ~${reset.toLocaleTimeString()}. Tip: just paste code in the box instead.`;return;}
+    const meta=await mr.json();
+    if(mr.status===404||meta.message==="Not Found"){st.textContent="⚠ Repo not found. Check the name — it must be a public repo.";return;}
+    if(meta.message){st.textContent="⚠ "+meta.message;return;}
+    const branch=meta.default_branch||"main";
+    const tr=await fetch(`https://api.github.com/repos/${gh.owner}/${gh.repo}/git/trees/${branch}?recursive=1`);
+    const tree=await tr.json();
+    if(!tree.tree){st.textContent="⚠ Couldn't read repo tree ("+(tree.message||"try again")+").";return;}
+    let paths=tree.tree.filter(t=>t.type==="blob"&&t.path.endsWith(".py")&&(t.size||0)<40000);
+    if(!paths.length){st.textContent="⚠ No Python files found in this repo.";return;}
+    paths=paths.slice(0,40);
+    const files=[];
+    for(let i=0;i<paths.length;i++){st.textContent=`Fetching files… ${i+1}/${paths.length}`;
+      try{const c=await fetch(`https://raw.githubusercontent.com/${gh.owner}/${gh.repo}/${branch}/${paths[i].path}`).then(r=>r.text());
+        files.push({path:paths[i].path,content:c});}catch(e){}}
+    const model=buildModelFromFiles(files);
+    if(!model.funcs.length){st.textContent="⚠ Parsed the files but found no functions.";return;}
+    document.getElementById("code").value=`# Loaded ${files.length} file(s) from ${gh.owner}/${gh.repo}\n# (showing the call map on the right)`;
+    analyzeModel(model);
+    st.textContent=`✔ Loaded ${gh.owner}/${gh.repo} — ${model.funcs.length} functions from ${files.length} file(s).`;
+  }catch(e){st.textContent="⚠ Fetch failed: "+e.message+" (network or rate limit).";}
 }
 
 loadSample();
