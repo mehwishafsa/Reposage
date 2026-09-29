@@ -184,6 +184,47 @@ canvas#map.pointing { cursor: pointer; }
   padding: 8px 12px; color: var(--text-2); font-size: 12px;
 }
 .focus-note.on { display: block; }
+
+/* Answer Path: the route an answer took through the code */
+.answer-bar {
+  position: absolute; left: 12px; right: 60px; top: 12px; z-index: 4; display: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 14px 12px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
+}
+.answer-bar.on { display: block; }
+.answer-bar .kicker { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+.answer-bar .kicker .conf { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-2); }
+.answer-bar .kicker .spacer { flex: 1; }
+.answer-bar .q { font-size: 16px; font-weight: 650; margin: 4px 0 2px; letter-spacing: -0.01em; }
+.answer-bar .a { color: var(--text-2); margin: 0 0 8px; max-height: 3em; overflow: hidden; }
+.route { display: flex; flex-wrap: wrap; gap: 4px 2px; align-items: center; }
+.route button {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface-2);
+  border-radius: 999px; padding: 2px 10px 2px 3px; cursor: pointer; font-size: 12px; color: var(--text);
+  max-width: 260px;
+}
+.route button span.t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.route button[aria-current="true"] { border-color: var(--text); }
+.route .num {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--text); color: var(--surface); font-size: 11px; font-weight: 700;
+}
+.route .arrow { color: var(--text-3); padding: 0 2px; font-size: 12px; }
+.route .arrow.guess { font-style: italic; }
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.steps li button {
+  display: grid; grid-template-columns: 22px 1fr; gap: 10px; width: 100%; text-align: left;
+  border: 0; background: none; padding: 8px 6px; margin: 0 -6px; border-radius: 8px; cursor: pointer;
+}
+.steps li button:hover { background: var(--surface-2); }
+.steps .num { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--text); color: var(--surface); font-size: 12px; font-weight: 700; }
+.steps .lbl { display: block; }
+.steps .loc { display: block; color: var(--text-3); font-size: 12px; font-family: var(--mono); overflow-wrap: anywhere; }
+.steps .hop { color: var(--text-3); font-size: 11px; padding-left: 32px; }
+.top select { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 8px; max-width: 240px; }
 .focus-note b { color: var(--text); }
 .table-wrap { position: absolute; inset: 0; overflow: auto; display: none; background: var(--surface); }
 .table-wrap.on { display: block; }
@@ -266,6 +307,7 @@ pre.sig {
     <button id="m-map" aria-pressed="true">Map</button>
     <button id="m-table" aria-pressed="false">Table</button>
   </div>
+  <select id="answers" aria-label="Answer Paths" hidden></select>
   <div class="stats" id="stats"></div>
   <button class="icon-btn" id="theme" title="Switch light / dark" aria-label="Switch light or dark theme">
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13z" fill="currentColor"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
@@ -307,6 +349,7 @@ pre.sig {
     <canvas id="map" role="img" aria-label="Map of the codebase. Use the Table view for an accessible list."></canvas>
     <div class="busy" id="busy" role="status"></div>
     <div class="focus-note" id="focus-note" role="note"></div>
+    <div class="answer-bar" id="answer-bar" role="region" aria-label="Answer Path"></div>
     <div class="tip" id="tip"></div>
     <div class="zoom">
       <button class="icon-btn" id="z-in" aria-label="Zoom in">+</button>
@@ -395,6 +438,7 @@ const state = {
   showMedium: true,
   showLabels: true,
   selected: null,                // { type: "file"|"sym", i }
+  answer: null,                  // the Answer Path being shown, if any
   hover: null,
   query: "",
 };
@@ -768,7 +812,7 @@ function draw() {
   // Fainter lines when there are many, so thousands of links don't turn into a grey mass.
   const alpha = Math.min(0.16, 0.16 * Math.sqrt(600 / Math.max(600, view.links.length)));
   ctx.lineWidth = 1 / k;
-  ctx.strokeStyle = `rgba(${colors.edge}, ${focus ? alpha / 3 : alpha})`;
+  ctx.strokeStyle = `rgba(${colors.edge}, ${focus || state.answer ? alpha / 3 : alpha})`;
   const focusMode = view.visibleLinks > FOCUS_LIMIT;
   if (!focusMode) {
     ctx.beginPath();
@@ -823,10 +867,13 @@ function draw() {
   // 3. Nodes, batched per layer (one fill per colour). A thin ring in the
   //    surface colour separates overlapping marks.
   const hits = searchHits(view);
-  const lit = n => !focus || n.i === focus.i || focus.out.has(n.i) || focus.inn.has(n.i);
+  const route = routeFor(view);
+  const onRoute = route ? new Set(route.map(r => r.i)) : null;
+  const lit = n => onRoute ? onRoute.has(n.i) || (focus && n.i === focus.i)
+                           : !focus || n.i === focus.i || focus.out.has(n.i) || focus.inn.has(n.i);
   for (const pass of [0, 1]) {                 // pass 0: dimmed, pass 1: normal
-    if (pass === 0 && !focus) continue;
-    ctx.globalAlpha = pass === 0 ? 0.18 : 1;
+    if (pass === 0 && !focus && !onRoute) continue;
+    ctx.globalAlpha = pass === 0 ? (onRoute ? 0.12 : 0.18) : 1;
     for (let g = 0; g < GROUPS.length; g++) {
       if (hidden.has(g)) continue;
       ctx.beginPath();
@@ -852,6 +899,10 @@ function draw() {
   for (const n of hits) if (!hidden.has(n.group)) ring(n, 1.5, colors.text2, 3);
   if (state.hover && state.hover.view === view) ring(state.hover.node, 1.5, colors.text, 3);
   if (focus) ring(N[focus.i], 2.5, colors.text, 4);
+
+  // 3c. The Answer Path: a bold route from step to step.
+  //     solid = a real call, dashed = a guessed call, dotted = no call found
+  if (route) drawRoute(route, k);
   ctx.restore();
 
   // 3c. Folder names, top-left of each outline, once it is wide enough on screen.
@@ -891,6 +942,185 @@ function draw() {
       ctx.fillStyle = `rgba(${colors.edge}, 0.08)`; ctx.fillRect(0, sy, w, 1);
     }
   }
+
+  // 6. Numbered badges of the Answer Path, on top of everything.
+  drawRouteBadges(view);
+}
+
+/* ---- Answer Path ------------------------------------------------------
+   An answer from /reposage:chat is a list of steps (functions, in the order
+   things happen). In the Symbols view each step is a node; in the Files view
+   steps are grouped by file. */
+
+function routeFor(view) {
+  const ans = state.answer;
+  if (!ans || !view.laidOut) return null;
+  const out = [];
+  ans.steps.forEach((st, k) => {
+    let i;
+    if (view.name === "syms") { if (st.type !== "sym") return; i = st.i; }
+    else i = st.type === "file" ? st.i : syms[st.i].file;
+    const last = out[out.length - 1];
+    if (last && last.i === i) { last.nums.push(k + 1); return; }   // same file twice in a row
+    out.push({ i, num: k + 1, nums: [k + 1], hop: k > 0 ? (ans.hops || [])[k - 1] : null });
+  });
+  return out.length ? out : null;
+}
+
+function drawRoute(route, k) {
+  const view = VIEWS[state.view], N = view.nodes;
+  for (let s = 1; s < route.length; s++) {
+    const a = N[route[s - 1].i], b = N[route[s].i];
+    const hop = route[s].hop;
+    ctx.setLineDash(hop === "medium" ? [8 / k, 5 / k] : hop === "none" ? [2 / k, 5 / k] : []);
+    ctx.lineWidth = 3 / k; ctx.strokeStyle = colors.text; ctx.lineCap = "round";
+    // a gentle curve, so a route going back and forth stays readable
+    const mx = (a.px + b.px) / 2, my = (a.py + b.py) / 2;
+    const dx = b.px - a.px, dy = b.py - a.py, len = Math.hypot(dx, dy) || 1;
+    const cx = mx - dy / len * Math.min(40, len * 0.15), cy = my + dx / len * Math.min(40, len * 0.15);
+    ctx.beginPath(); ctx.moveTo(a.px, a.py); ctx.quadraticCurveTo(cx, cy, b.px, b.py); ctx.stroke();
+    // arrowhead where the curve reaches b
+    const ang = Math.atan2(b.py - cy, b.px - cx), tip = b.r + 12 / k, sz = 9 / k;
+    const tx = b.px - Math.cos(ang) * tip, ty = b.py - Math.sin(ang) * tip;
+    ctx.setLineDash([]); ctx.fillStyle = colors.text; ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - Math.cos(ang - 0.5) * sz, ty - Math.sin(ang - 0.5) * sz);
+    ctx.lineTo(tx - Math.cos(ang + 0.5) * sz, ty - Math.sin(ang + 0.5) * sz);
+    ctx.fill();
+  }
+  ctx.setLineDash([]); ctx.lineCap = "butt";
+}
+
+function drawRouteBadges(view) {
+  const route = routeFor(view);
+  if (!route) return;
+  ctx.font = "700 11px " + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  // A node visited more than once (e.g. a file in the Files view) shows all its numbers: "3·5".
+  const numbers = new Map();
+  for (const r of route) numbers.set(r.i, (numbers.get(r.i) || []).concat(r.nums));
+  for (const [i, nums] of numbers) {
+    const n = view.nodes[i];
+    const [sx, sy] = toScreen(n.px, n.py);
+    const text = nums.join("·"), R = 10;
+    const half = Math.max(0, ctx.measureText(text).width / 2 - 4);   // pill for "3·5"
+    const pill = (pad) => {
+      ctx.beginPath();
+      ctx.arc(sx - half, sy, R + pad, Math.PI / 2, Math.PI * 1.5);
+      ctx.arc(sx + half, sy, R + pad, Math.PI * 1.5, Math.PI / 2);
+      ctx.closePath();
+    };
+    pill(2); ctx.fillStyle = colors.surface; ctx.fill();
+    pill(0); ctx.fillStyle = colors.text; ctx.fill();
+    ctx.fillStyle = colors.surface; ctx.fillText(text, sx, sy + 0.5);
+  }
+  ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+}
+
+const answerBar = document.getElementById("answer-bar");
+const CONFIDENCE = {
+  high: "✓ High confidence",
+  medium: "~ Medium confidence",
+  low: "? Low confidence",
+};
+
+function enterAnswer(id) {
+  const ans = (RAW.answers || []).find(a => a.id === id);
+  if (!ans) return;
+  state.answer = ans;
+  state.selected = null;
+  const sel = document.getElementById("answers");
+  sel.value = id;
+  // Show the layers the path goes through, even if they were hidden (e.g. Tests).
+  const groups = new Set(ans.steps.map(st => (st.type === "sym" ? syms[st.i].group : files[st.i].group)));
+  groups.forEach(g => state.hidden.delete(g));
+  renderLegend();
+  try { history.replaceState(null, "", "#answer=" + encodeURIComponent(id)); } catch (_) {}
+  const wanted = ans.steps.some(st => st.type === "sym") ? "syms" : "files";
+  const show = () => { renderAnswerBar(); renderDetail(); fitRoute(); };
+  const v = VIEWS[wanted];
+  const needsLayout = !v.laidOut || [...groups].some(g => !v.layoutGroups.has(g));
+  if (state.view !== wanted || needsLayout) setView(wanted, show);   // setView lays out if needed
+  else show();
+}
+
+function exitAnswer() {
+  state.answer = null;
+  document.getElementById("answers").value = "";
+  answerBar.classList.remove("on");
+  try { history.replaceState(null, "", location.pathname); } catch (_) {}
+  renderDetail(); requestDraw();
+}
+
+function fitRoute() {
+  const view = VIEWS[state.view], route = routeFor(view);
+  if (!route) return;
+  const pts = route.map(r => view.nodes[r.i]);
+  const xs = pts.map(n => n.px), ys = pts.map(n => n.py);
+  const { w, h } = size();
+  const top = answerBar.offsetHeight + 40;                 // keep the route below the banner
+  const bw = Math.max(80, Math.max(...xs) - Math.min(...xs)), bh = Math.max(80, Math.max(...ys) - Math.min(...ys));
+  const kk = Math.max(0.3, Math.min(2.2, (w - 240) / bw, (h - top - 60) / bh));
+  moveTo((Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2 - top / 2 / kk, kk);
+}
+
+function stepItem(st) {
+  if (st.type === "sym") {
+    const s = syms[st.i];
+    return { name: s.qual, loc: `${files[s.file].path}:${s.l0}`, group: s.group };
+  }
+  const f = files[st.i];
+  return { name: f.name, loc: f.path, group: f.group };
+}
+
+function renderAnswerBar() {
+  const ans = state.answer;
+  if (!ans) { answerBar.classList.remove("on"); return; }
+  const chips = ans.steps.map((st, k) => {
+    const it = stepItem(st);
+    const hop = k > 0 ? (ans.hops || [])[k - 1] : null;
+    const arrow = k === 0 ? "" : `<span class="arrow ${hop === "high" ? "" : "guess"}" title="${
+      hop === "high" ? "a real call" : hop === "medium" ? "a guessed call" : "no direct call found"}">${hop === "high" ? "→" : "⇢"}</span>`;
+    const cur = state.selected && state.selected.type === st.type && state.selected.i === st.i;
+    return `${arrow}<button data-step="${k}" aria-current="${cur}" title="${esc(it.loc)}"><span class="num">${k + 1}</span><span class="t">${esc(it.name)}</span></button>`;
+  }).join("");
+  answerBar.innerHTML = `
+    <div class="kicker">Answer path <span class="conf" title="${esc(ans.confidence_note || "")}">${CONFIDENCE[ans.confidence] || ""}</span>
+      <span class="spacer"></span>
+      <button class="btn" id="answer-close" title="Back to the full map (Esc)">Close</button></div>
+    <div class="q">${esc(ans.question)}</div>
+    ${ans.answer ? `<p class="a">${esc(ans.answer)}</p>` : ""}
+    <div class="route">${chips}</div>`;
+  answerBar.classList.add("on");
+}
+
+answerBar.addEventListener("click", e => {
+  if (e.target.closest("#answer-close")) { exitAnswer(); return; }
+  const b = e.target.closest("button[data-step]");
+  if (b) { const st = state.answer.steps[+b.dataset.step]; select({ type: st.type, i: st.i }); renderAnswerBar(); }
+});
+
+function renderAnswerDetail() {
+  const ans = state.answer;
+  const rows = ans.steps.map((st, k) => {
+    const it = stepItem(st);
+    const hop = k < ans.steps.length - 1 ? (ans.hops || [])[k] : null;
+    const hopText = hop === "medium" ? "↓ guessed call (matched by name only)" : hop === "none" ? "↓ no direct call found here" : "";
+    return `<li><button data-step="${k}"><span class="num">${k + 1}</span><span>
+      <span class="lbl">${esc(st.label || it.name)}</span>
+      <span class="loc">${esc(it.name)} · ${breakable(it.loc)}</span></span></button>
+      ${hopText ? `<div class="hop">${hopText}</div>` : ""}</li>`;
+  }).join("");
+  detail.innerHTML = `
+    <div class="d-head">
+      <div class="d-kind">Answer path · ${esc((ans.created || "").replace("T", " ").slice(0, 16))}</div>
+      <h1 class="d-name">${esc(ans.question)}</h1>
+      <div class="chips"><span class="chip">${CONFIDENCE[ans.confidence] || ""}</span>
+        <span class="chip">${plural(ans.steps.length, "step")}</span></div>
+    </div>
+    ${ans.answer ? `<div class="d-sec"><h2>Answer</h2><p>${esc(ans.answer)}</p></div>` : ""}
+    <div class="d-sec"><h2>How sure is this?</h2><p>${esc(ans.confidence_note || "")}</p></div>
+    <div class="d-sec"><h2>Steps</h2><ol class="steps">${rows}</ol></div>`;
 }
 
 function labelOf(view, n) {
@@ -914,6 +1144,8 @@ function drawLabels(view, focus, hits, onScreen) {
     return true;
   };
   const important = [];
+  const route = routeFor(view);
+  if (route) route.forEach(r => important.push(view.nodes[r.i]));
   if (focus) {
     important.push(view.nodes[focus.i]);
     focus.out.forEach(i => important.push(view.nodes[i]));
@@ -1018,6 +1250,7 @@ function select(sel, { move = true } = {}) {
     if (move) centerOn(sel);
   }
   renderDetail();
+  if (state.answer) renderAnswerBar();
   if (state.mode === "table") renderTable();
   requestDraw();
 }
@@ -1072,6 +1305,7 @@ function editorLink(path, line) {
 
 function renderDetail() {
   const sel = state.selected;
+  if (!sel && state.answer) { renderAnswerDetail(); return; }
   if (!sel) {
     detail.innerHTML = `<div class="d-empty"><h3>${esc(RAW.project)}</h3>
       <p>Click any node on the map to see what it is, what it depends on and what depends on it.</p>
@@ -1154,6 +1388,9 @@ detail.addEventListener("click", e => {
     });
   } else if (b.dataset.type) {
     select({ type: b.dataset.type, i: +b.dataset.i });
+  } else if (b.dataset.step && state.answer) {
+    const st = state.answer.steps[+b.dataset.step];
+    select({ type: st.type, i: st.i });
   }
 });
 
@@ -1315,8 +1552,10 @@ function setView(name, then) {
   if (state.mode === "table") renderTable();
   const view = VIEWS[name];
   const stale = view.laidOut && [...GROUPS.keys()].some(g => !state.hidden.has(g) && !view.layoutGroups.has(g));
-  if (view.laidOut && !stale) { placeVisible(view); fit(false); then && then(); requestDraw(); }
-  else layoutView(view, () => { fit(false); then && then(); requestDraw(); });
+  // With an Answer Path open, frame the route; otherwise the whole map.
+  const frame = () => (state.answer && routeFor(view) ? fitRoute() : fit(false));
+  if (view.laidOut && !stale) { placeVisible(view); frame(); then && then(); requestDraw(); }
+  else layoutView(view, () => { frame(); then && then(); requestDraw(); });
 }
 function setMode(mode) {
   state.mode = mode;
@@ -1352,7 +1591,7 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { re
 document.addEventListener("keydown", e => {
   if (e.target.matches("input, textarea")) return;
   if (e.key === "/") { e.preventDefault(); qInput.focus(); qInput.select(); }
-  else if (e.key === "Escape") select(null);
+  else if (e.key === "Escape") { if (!state.selected && state.answer) exitAnswer(); else select(null); }
   else if (e.key === "f" || e.key === "F") fit(true);
   else if (e.key === "1") setView("files");
   else if (e.key === "2") setView("syms");
@@ -1368,6 +1607,21 @@ document.getElementById("stats").innerHTML =
 readColors();
 renderDetail();
 setView("files");
+
+// Saved Answer Paths: a menu in the top bar; "#answer=<id>" opens one directly.
+const answersMenu = document.getElementById("answers");
+if ((RAW.answers || []).length) {
+  answersMenu.hidden = false;
+  answersMenu.innerHTML = `<option value="">Answer paths (${RAW.answers.length})</option>` +
+    RAW.answers.map(a => `<option value="${esc(a.id)}">${esc(a.question)}</option>`).join("");
+  answersMenu.onchange = () => (answersMenu.value ? enterAnswer(answersMenu.value) : exitAnswer());
+}
+const openFromHash = () => {
+  const m = location.hash.match(/answer=([^&]+)/);
+  if (m) enterAnswer(decodeURIComponent(m[1]));
+};
+openFromHash();
+window.addEventListener("hashchange", openFromHash);
 </script>
 </body>
 </html>

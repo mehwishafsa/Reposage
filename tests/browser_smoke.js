@@ -58,6 +58,17 @@ const BUDGET = { firstMapMs: 3000, symbolsLayoutMs: 8000, frameMs: 16 };
   await page.waitForSelector(".d-name");
   await snap("5-selected");
 
+  // Answer Path mode, if the dashboard has saved answers.
+  if (await page.evaluate(() => (RAW.answers || []).length)) {
+    await page.click("#m-map");
+    await page.evaluate(() => enterAnswer(RAW.answers[0].id));
+    await page.waitForFunction(() => document.getElementById("answer-bar").classList.contains("on")
+      && VIEWS[state.view].laidOut && !document.getElementById("busy").classList.contains("on"));
+    await snap("5b-answer-path");
+    await page.keyboard.press("Escape");
+    if (await page.evaluate(() => state.answer !== null)) errors.push("Esc did not close the Answer Path");
+  }
+
   await page.click("#m-table");
   await page.waitForSelector("table tbody tr");
   await snap("6-table");

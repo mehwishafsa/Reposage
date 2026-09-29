@@ -69,7 +69,7 @@ Tree-sitter reads the code and writes a **knowledge graph** to
 | `/reposage:scan` | ✅ ready | scan the repo, build `.reposage/graph.json` |
 | `/reposage:dashboard` | ✅ ready | interactive map of the code in the browser |
 | `/reposage:summarize` | ✅ ready | AI summaries, real layers and tags, in plain English |
-| `/reposage:chat` | planned | ask questions about the codebase |
+| `/reposage:chat` | ✅ ready | ask questions; get a cited answer + an Answer Path |
 | `/reposage:explain` | planned | deep-dive into one file |
 | `/reposage:diff` | planned | what do my current changes affect? |
 | `/reposage:onboard` | planned | onboarding guide for new team members |
@@ -149,6 +149,30 @@ Options: `--include-tests`, `--limit N` (only the N most connected files),
 `python3 reposage/bootstrap.py summarize plan .` then `summarize run .`.
 **The AI's layer always wins** over the folder-name guess.
 
+### Chat and Answer Paths (`/reposage:chat`)
+```
+/reposage:chat How does retry work?
+```
+1. **Find**: the original RepoSage search (TF-IDF, now in `reposage/rag.py`)
+   runs over code *and* AI summaries and tags, then follows callers and
+   callees in the graph. Only this relevant code (about 12 items) is given to
+   Claude, never the whole repo. A question costs about $0.07-0.10.
+2. **Answer**: plain English, step by step, every claim cited as `file:line`,
+   plus a *How sure* line that names any step resting on a guessed
+   (name-only) call.
+3. **Answer Path**: the steps are saved (`.reposage/answers/`) and the
+   dashboard opens with them as a numbered route. Everything else fades,
+   and the question and answer sit on top. Solid line = real call, dashed =
+   guessed call, dotted = no call found. Reopen any path from the dashboard's
+   **Answer paths** menu, or with `bootstrap.py dashboard --answer latest`.
+
+### Your own layer choices (`.reposage/overrides.json`)
+```json
+{ "layers": { "src/legacy/": "Utility", "app.py": "API" } }
+```
+A key ending in `/` covers a whole folder, and the most specific key wins.
+Precedence: **your override > AI > folder-name guess**.
+
 ### How it works
 | Step | File | What it does |
 |------|------|--------------|
@@ -157,7 +181,8 @@ Options: `--include-tests`, `--limit N` (only the N most connected files),
 | 3 | `reposage/parsers/*.py` | Tree-sitter parses one file → definitions, imports, calls |
 | 4 | `reposage/graph_builder.py` | links names across files → nodes + edges, sorted |
 | 5 | `reposage/summarize.py` + `agents/summarizer.md` | AI summaries, layers and tags (batched, incremental) |
-| 6 | `reposage/dashboard/` | packs the graph + page into `dashboard.html` (`template.html` is the app) |
+| 6 | `reposage/rag.py` + `reposage/chat.py` | question → relevant code → cited answer → Answer Path |
+| 7 | `reposage/dashboard/` | packs the graph + page into `dashboard.html` (`template.html` is the app) |
 
 The output is **deterministic**: the same code always gives a byte-identical
 `graph.json` (no timestamps, no absolute paths, everything sorted). Each

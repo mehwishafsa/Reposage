@@ -113,6 +113,7 @@ def build_data(graph: dict, repo_root: str) -> dict:
         "calls": calls,
         "flinks": flinks,
         "tours": graph.get("tours", []),
+        "answers": _answers(repo_root, sym_idx, file_idx),
     }
 
 
@@ -141,6 +142,24 @@ def write_dashboard(graph: dict, repo_root: str, out_path: str) -> dict:
 
 
 # ----------------------------------------------------------------------
+
+def _answers(repo_root: str, sym_idx: dict, file_idx: dict) -> list[dict]:
+    """Saved Answer Paths (from /reposage:chat), with steps as node indexes."""
+    from ..chat import load_answers
+    out = []
+    for rec in load_answers(repo_root):
+        steps = []
+        for st in rec.get("steps", []):
+            if st["id"] in sym_idx:
+                steps.append({"type": "sym", "i": sym_idx[st["id"]], "label": st.get("label", "")})
+            elif st["id"] in file_idx:
+                steps.append({"type": "file", "i": file_idx[st["id"]], "label": st.get("label", "")})
+        if steps:
+            out.append({k: rec.get(k) for k in ("id", "question", "answer", "created",
+                                                 "confidence", "confidence_note", "hops")}
+                       | {"steps": steps})
+    return out
+
 
 def _clip(text: str, limit: int) -> str:
     text = text or ""

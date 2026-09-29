@@ -52,8 +52,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
     dash = sub.add_parser("dashboard",
                           help="scan, then write and open .reposage/dashboard.html")
     dash.add_argument("path", nargs="?", default=".", help="repo folder (default: .)")
+    dash.add_argument("--answer", metavar="ID",
+                      help="open with a saved Answer Path shown ('latest' for the newest)")
     dash.add_argument("--no-open", action="store_true",
                       help="only write the file, don't open a browser")
+    chat = sub.add_parser("chat", help="questions about the code, and Answer Paths")
+    csub = chat.add_subparsers(dest="action", required=True)
+    ca = csub.add_parser("ask", help="find the code for a question and print a context pack")
+    ca.add_argument("question", nargs="+")
+    ca.add_argument("--repo", default=".", help="repo folder (default: .)")
+    ca.add_argument("--include-tests", action="store_true", help="search test files too")
+    cp = csub.add_parser("path", help="save the steps of an answer and show them on the dashboard")
+    cp.add_argument("steps", nargs="+", help='"N:short label" per step, in order')
+    cp.add_argument("--answer", default="", help="the answer in one or two sentences")
+    cp.add_argument("--repo", default=".", help="repo folder (default: .)")
+    cp.add_argument("--no-open", action="store_true", help="don't open a browser")
     summ = sub.add_parser("summarize", help="AI summaries: plan batches, save answers")
     ssub = summ.add_subparsers(dest="action", required=True)
     sp = ssub.add_parser("plan", help="scan, choose files, write batches, show the estimate")
@@ -81,7 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "summarize":
         return run_summarize(args)
     if args.command == "dashboard":
-        return run_dashboard(os.path.abspath(args.path), open_browser=not args.no_open)
+        return run_dashboard(os.path.abspath(args.path), open_browser=not args.no_open,
+                             answer=args.answer)
+    if args.command == "chat":
+        return run_chat(args)
     return 1
 
 
@@ -135,7 +151,62 @@ def run_summarize(args) -> int:
     return 1 if files == 0 else 0
 
 
-def run_dashboard(repo: str, open_browser: bool = True) -> int:
+def run_chat(args) -> int:
+    import contextlib
+    import io
+    from . import chat
+
+    repo = os.path.abspath(args.repo)
+    if args.action == "ask":
+        with contextlib.redirect_stdout(io.StringIO()):   # keep the output for Claude short
+            code = run_scan(repo)
+        if code != 0:
+            return code
+        graph = _load_json(os.path.join(repo, OUT_DIR, "graph.json"))
+        print(chat.ask(repo, graph, " ".join(args.question), include_tests=args.include_tests))
+        return 0
+
+    try:
+        record = chat.save_path(repo, args.steps, args.answer)
+    except (OSError, ValueError) as e:
+        print(f"RepoSage: could not save the Answer Path: {e}", file=sys.stderr)
+        return 2
+    print(f"Answer Path saved: {len(record['steps'])} steps, confidence {record['confidence']}.")
+    print(f"  {record['confidence_note']}")
+    for p in record["problems"]:
+        print(f"  problem: {p}")
+    with contextlib.redirect_stdout(io.StringIO()):
+        run_dashboard(repo, open_browser=False)
+    return open_dashboard(repo, not args.no_open, record["id"])
+
+
+def open_dashboard(repo: str, open_browser: bool, answer: str | None = None) -> int:
+    """Print (and try to open) the dashboard link, optionally at an Answer Path."""
+    out = os.path.join(repo, OUT_DIR, "dashboard.html")
+    url = "file://" + ("" if out.startswith("/") else "/") + out.replace(os.sep, "/")
+    if answer:
+        if answer == "latest":
+            from .chat import load_answers
+            latest = load_answers(repo, limit=1)
+            if not latest:
+                print("RepoSage: no saved Answer Paths yet; ask with /reposage:chat first.")
+                return 1
+            answer = latest[0]["id"]
+        url += "#answer=" + answer
+    opened = False
+    if open_browser:
+        import webbrowser
+        try:
+            opened = webbrowser.open(url)
+        except Exception:  # no browser available (e.g. a remote server)
+            opened = False
+    print(f"  {'Opened in your browser' if opened else 'Open this in a browser'}: {url}")
+    if answer:
+        print(f"  Reopen later:  python3 <plugin>/reposage/bootstrap.py dashboard --answer {answer}")
+    return 0
+
+
+def run_dashboard(repo: str, open_browser: bool = True, answer: str | None = None) -> int:
     """Refresh the graph (incremental, so usually instant), then build the page."""
     from .dashboard.build import write_dashboard   # only needed here
 
@@ -149,20 +220,11 @@ def run_dashboard(repo: str, open_browser: bool = True) -> int:
     out = os.path.join(repo, OUT_DIR, "dashboard.html")
     data = write_dashboard(graph, repo, out)
 
-    url = "file://" + ("" if out.startswith("/") else "/") + out.replace(os.sep, "/")
-    opened = False
-    if open_browser:
-        import webbrowser
-        try:
-            opened = webbrowser.open(url)
-        except Exception:  # no browser available (e.g. a remote server)
-            opened = False
     print()
     print(f"RepoSage dashboard: {os.path.relpath(out, repo)} "
           f"({os.path.getsize(out) / 1024:.0f} KB, {len(data['files']['path'])} files, "
           f"{len(data['sym']['name'])} symbols)")
-    print(f"  {'Opened in your browser' if opened else 'Open this in a browser'}: {url}")
-    return 0
+    return open_dashboard(repo, open_browser, answer)
 
 
 def run_scan(repo: str, full: bool = False) -> int:
