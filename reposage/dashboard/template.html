@@ -178,6 +178,13 @@ canvas#map.pointing { cursor: pointer; }
   padding: 6px 14px; color: var(--text-2); display: none; white-space: nowrap;
 }
 .busy.on { display: block; }
+.focus-note {
+  position: absolute; left: 12px; bottom: 12px; z-index: 3; max-width: 380px; display: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; color: var(--text-2); font-size: 12px;
+}
+.focus-note.on { display: block; }
+.focus-note b { color: var(--text); }
 .table-wrap { position: absolute; inset: 0; overflow: auto; display: none; background: var(--surface); }
 .table-wrap.on { display: block; }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; table-layout: fixed; }
@@ -299,6 +306,7 @@ pre.sig {
   <section class="stage" id="stage">
     <canvas id="map" role="img" aria-label="Map of the codebase. Use the Table view for an accessible list."></canvas>
     <div class="busy" id="busy" role="status"></div>
+    <div class="focus-note" id="focus-note" role="note"></div>
     <div class="tip" id="tip"></div>
     <div class="zoom">
       <button class="icon-btn" id="z-in" aria-label="Zoom in">+</button>
@@ -439,17 +447,31 @@ function computeBands(view, groups) {
   return { list: bands, width };
 }
 
+/* Where along the band each node "wants" to be (its x anchor).
+   Inside a band, nodes are ordered by folder, then file, then line, and
+   laid along the width like books on a shelf: each takes room in
+   proportion to its size, and every new folder starts after a small gap.
+   So each folder owns one continuous stretch of its band. */
 function anchors(view, width) {
-  // Order files by path inside each layer; symbols follow their file.
-  const byGroup = GROUPS.map(() => []);
-  for (const f of files) byGroup[f.group].push(f);
-  const fileX = new Float32Array(files.length);
-  for (const list of byGroup) {
-    list.sort((a, b) => (a.path < b.path ? -1 : 1));
-    list.forEach((f, k) => { fileX[f.i] = ((k + 0.5) / list.length) * width; });
+  const ax = new Float32Array(view.nodes.length);
+  const fileOf = n => (view.name === "files" ? n.item : files[n.item.file]);
+  const key = n => fileOf(n).path + "\u0000" + String(view.name === "files" ? 0 : n.item.l0).padStart(7, "0");
+  for (let g = 0; g < GROUPS.length; g++) {
+    const list = view.nodes.filter(n => n.group === g).sort((a, b) => (key(a) < key(b) ? -1 : 1));
+    if (!list.length) continue;
+    const GAP = view.name === "files" ? 30 : 16;
+    const start = [];
+    let pos = 0, lastDir = null;
+    for (const n of list) {
+      const dir = fileOf(n).dir;
+      if (lastDir !== null && dir !== lastDir) pos += GAP;
+      lastDir = dir;
+      start.push(pos);
+      pos += 2 * n.r + 4;
+    }
+    list.forEach((n, k) => { ax[view.nodes.indexOf(n)] = ((start[k] + n.r + 2) / pos) * width; });
   }
-  return view.name === "files" ? view.nodes.map(n => fileX[n.i])
-                               : view.nodes.map(n => fileX[n.item.file]);
+  return ax;
 }
 
 function hash(i) {            // small deterministic pseudo-random in [-0.5, 0.5)
@@ -488,8 +510,8 @@ function layoutView(view, onDone) {
   // collision force already stops overlaps, and without repulsion each
   // file's functions settle into a tidy cluster.
   const sim = d3.forceSimulation(active).stop()
-    .force("link", linkX(view, groups, isFiles ? 0.35 : 0.25))
-    .force("x", d3.forceX(n => n.ax).strength(isFiles ? 0.05 : 0.12))
+    .force("link", linkX(view, groups, isFiles ? 0.12 : 0.06))
+    .force("x", d3.forceX(n => n.ax).strength(isFiles ? 0.18 : 0.25))
     .force("y", d3.forceY(n => list[n.group].top + list[n.group].h / 2).strength(isFiles ? 0.12 : 0.01))
     .force("collide", d3.forceCollide(n => n.r + (isFiles ? 3 : 1.5)).iterations(isFiles ? 2 : 1))
     .force("band", keepInBand);
@@ -540,6 +562,58 @@ function linkX(view, groups, strength) {
 
 /* Hidden layers collapse: the visible bands are stacked without gaps.
    Nodes keep their position inside their band (n.y - band.top). */
+/* Above this many links, drawing them all only produces a grey smudge, so
+   the map switches to "focus mode": links appear only for the selected node. */
+const FOCUS_LIMIT = 3000;
+
+/* Folder outlines: for every folder inside a band, a soft outline around its
+   nodes (the convex hull of small circles around each node). */
+function convexHull(points) {                 // Andrew's monotone chain
+  const pts = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (pts.length < 3) return pts;
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [], upper = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+function folderOutlines(view) {
+  const byFolder = new Map();              // "group|dir" -> nodes
+  for (const n of view.nodes) {
+    if (state.hidden.has(n.group) || !view.layoutGroups.has(n.group)) continue;
+    const dir = view.name === "files" ? n.item.dir : files[n.item.file].dir;
+    const key = n.group + "|" + dir;
+    (byFolder.get(key) || byFolder.set(key, []).get(key)).push(n);
+  }
+  const outlines = [];
+  for (const [key, nodes] of byFolder) {
+    if (nodes.length < 2) continue;          // a lone node needs no outline
+    const pad = view.name === "files" ? 9 : 5;
+    const pts = [];
+    for (const n of nodes) {
+      for (let a = 0; a < 8; a++) {
+        const ang = a * Math.PI / 4;
+        pts.push([n.px + Math.cos(ang) * (n.r + pad), n.py + Math.sin(ang) * (n.r + pad)]);
+      }
+    }
+    const hull = convexHull(pts);
+    const top = hull.reduce((m, p) => (p[1] < m[1] || (p[1] === m[1] && p[0] < m[0]) ? p : m), hull[0]);
+    const minX = Math.min(...hull.map(p => p[0])), maxX = Math.max(...hull.map(p => p[0]));
+    const dir = key.slice(key.indexOf("|") + 1);
+    outlines.push({ hull, labelX: minX, labelY: Math.min(...hull.map(p => p[1])), width: maxX - minX,
+                    name: dir ? dir.split("/").slice(-2).join("/") : "(root)", full: dir || "(root)" });
+  }
+  return outlines;
+}
+
 function placeVisible(view) {
   let y = 0;
   view.visTop = [];
@@ -555,6 +629,9 @@ function placeVisible(view) {
   const shown = view.nodes.filter(n => !state.hidden.has(n.group));
   view.tree = d3.quadtree(shown, n => n.px, n => n.py);
   view.maxR = shown.reduce((m, n) => Math.max(m, n.r), 0);
+  view.outlines = folderOutlines(view);
+  view.visibleLinks = view.links.filter(l => !state.hidden.has(view.nodes[l.s].group)
+    && !state.hidden.has(view.nodes[l.t].group) && (state.showMedium || l.high)).length;
 }
 
 /* ---- Camera ---------------------------------------------------------- */
@@ -668,6 +745,17 @@ function draw() {
     if (alt++ % 2 === 0) { ctx.fillStyle = colors.band; ctx.fillRect(x0, view.visTop[b.group], x1 - x0, b.h); }
   }
 
+  // 1b. Folder outlines: faint fill + hairline around each folder's nodes.
+  ctx.lineJoin = "round";
+  ctx.fillStyle = `rgba(${colors.edge}, 0.025)`;
+  ctx.strokeStyle = `rgba(${colors.edge}, 0.13)`;
+  ctx.lineWidth = 1 / k;
+  for (const o of view.outlines || []) {
+    ctx.beginPath();
+    o.hull.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])));
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+
   const focus = focusSets(view);
   const hidden = state.hidden;
   const N = view.nodes;
@@ -678,13 +766,23 @@ function draw() {
   const alpha = Math.min(0.16, 0.16 * Math.sqrt(600 / Math.max(600, view.links.length)));
   ctx.lineWidth = 1 / k;
   ctx.strokeStyle = `rgba(${colors.edge}, ${focus ? alpha / 3 : alpha})`;
-  ctx.beginPath();
-  for (const l of view.links) {
-    if (!visibleLink(l)) continue;
-    const a = N[l.s], b = N[l.t];
-    ctx.moveTo(a.px, a.py); ctx.lineTo(b.px, b.py);
+  const focusMode = view.visibleLinks > FOCUS_LIMIT;
+  if (!focusMode) {
+    ctx.beginPath();
+    for (const l of view.links) {
+      if (!visibleLink(l)) continue;
+      const a = N[l.s], b = N[l.t];
+      ctx.moveTo(a.px, a.py); ctx.lineTo(b.px, b.py);
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
+  const note = document.getElementById("focus-note");
+  note.classList.toggle("on", focusMode && state.mode === "map");
+  if (focusMode) {
+    note.innerHTML = `<b>${fmt(view.visibleLinks)} links</b> are too many to draw at once, so the map ` +
+      (focus ? "shows only the selected node's connections." : "shows them only for the node you select. <b>Click a node</b> to see its connections.") +
+      " Hiding a layer (e.g. Tests) brings the full picture back.";
+  }
 
   // 2b. Links of the selected node: outgoing solid, incoming dashed, with arrowheads.
   if (focus) {
@@ -752,6 +850,22 @@ function draw() {
   if (state.hover && state.hover.view === view) ring(state.hover.node, 1.5, colors.text, 3);
   if (focus) ring(N[focus.i], 2.5, colors.text, 4);
   ctx.restore();
+
+  // 3c. Folder names, top-left of each outline, once it is wide enough on screen.
+  ctx.font = "10px " + getComputedStyle(document.body).fontFamily;
+  ctx.fillStyle = colors.text3;
+  const placed = [];
+  for (const o of view.outlines || []) {
+    if (o.width * k < 90) continue;
+    const [sx, sy] = toScreen(o.labelX, o.labelY);
+    if (sx > w || sy < 0 || sy > h) continue;
+    const label = (o.name.length > 40 ? "…" + o.name.slice(-39) : o.name) + "/";
+    const x = Math.max(sx + 6, 110), y = sy - 3, tw = ctx.measureText(label).width;
+    if (tw > o.width * k) continue;                         // wider than its folder
+    if (placed.some(r => x < r[1] && x + tw > r[0] && Math.abs(y - r[2]) < 12)) continue;
+    placed.push([x - 4, x + tw + 4, y]);
+    ctx.fillText(label, x, y);
+  }
 
   // 4. Labels (screen space), most important first, never overlapping.
   if (state.showLabels) drawLabels(view, focus, hits, onScreen);
@@ -1206,7 +1320,11 @@ document.getElementById("m-table").onclick = () => setMode("table");
 document.getElementById("z-in").onclick = () => { const { w, h } = size(); zoomAt(w / 2, h / 2, 1.5); };
 document.getElementById("z-out").onclick = () => { const { w, h } = size(); zoomAt(w / 2, h / 2, 1 / 1.5); };
 document.getElementById("z-fit").onclick = () => fit(true);
-document.getElementById("opt-medium").onchange = e => { state.showMedium = e.target.checked; renderDetail(); requestDraw(); };
+document.getElementById("opt-medium").onchange = e => {
+  state.showMedium = e.target.checked;
+  for (const v of Object.values(VIEWS)) if (v.laidOut) placeVisible(v);
+  renderDetail(); requestDraw();
+};
 document.getElementById("opt-labels").onchange = e => { state.showLabels = e.target.checked; requestDraw(); };
 
 document.getElementById("theme").onclick = () => {

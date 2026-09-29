@@ -44,6 +44,11 @@ const BUDGET = { firstMapMs: 3000, symbolsLayoutMs: 8000, frameMs: 16 };
   await snap("3-symbols");
   const frameMs = await page.evaluate(() => { const t0 = performance.now(); for (let i = 0; i < 20; i++) draw(); return (performance.now() - t0) / 20; });
 
+  // Focus mode: above FOCUS_LIMIT visible links the explanatory note must show.
+  const focus = await page.evaluate(() => ({ links: VIEWS.syms.visibleLinks, limit: FOCUS_LIMIT,
+    note: document.getElementById("focus-note").classList.contains("on") }));
+  if ((focus.links > focus.limit) !== focus.note) errors.push("focus note wrong: " + JSON.stringify(focus));
+
   // Search for the first symbol's name and open it with Enter.
   const name = await page.evaluate(() => syms.length ? syms[0].name : files[0].name);
   await page.click("#q"); await page.keyboard.type(name);
