@@ -339,7 +339,8 @@ const files = RAW.files.path.map((path, i) => ({
   name: path.slice(path.lastIndexOf("/") + 1),
   dir: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
   lang: RAW.languages[RAW.files.lang[i]],
-  group: RAW.files.group[i], ai: RAW.files.ai[i] === 1,
+  group: RAW.files.group[i],
+  src: ["guess", "ai", "user"][RAW.files.src[i]],     // who decided the layer
   doc: RAW.files.doc[i], summary: RAW.files.summary[i], ext: RAW.files.ext[i],
   tags: (RAW.files.tags || [])[i] || [],
   syms: [], out: [], in: [],
@@ -375,6 +376,7 @@ for (let k = 0; k < RAW.flinks.length; k += 4) {
 
 /** A path with line-break opportunities after each "/" (long Java paths). */
 const breakable = p => esc(p).replace(/\//g, "/<wbr>");
+const LAYER_SOURCE = { guess: " · guessed from path", ai: "", user: " · set by you" };
 const esc = s => String(s).replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = n => n.toLocaleString("en-US");
@@ -1093,7 +1095,7 @@ function renderDetail() {
         <h1 class="d-name">${esc(f.name)}</h1>
         <div class="d-path mono">${breakable(f.path)}</div>
         <div class="chips">
-          <span class="chip">${swatch(f.group)} ${esc(GROUPS[f.group])}${f.ai ? "" : " · guessed from path"}</span>
+          <span class="chip">${swatch(f.group)} ${esc(GROUPS[f.group])}${LAYER_SOURCE[f.src]}</span>
           <span class="chip">${plural(f.syms.length, "symbol")}</span>
           ${f.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join("")}
         </div>
@@ -1125,7 +1127,7 @@ function renderDetail() {
         <h1 class="d-name">${esc(s.name)}</h1>
         <div class="d-path mono"><button data-type="file" data-i="${f.i}">${breakable(f.path)}</button>:${s.l0}–${s.l1}</div>
         <div class="chips">
-          <span class="chip">${swatch(s.group)} ${esc(GROUPS[s.group])}${f.ai ? "" : " · guessed from path"}</span>
+          <span class="chip">${swatch(s.group)} ${esc(GROUPS[s.group])}${LAYER_SOURCE[f.src]}</span>
           <span class="chip">${s.l1 - s.l0 + 1} lines</span>
         </div>
         <div class="d-actions">
@@ -1166,10 +1168,11 @@ function renderLegend() {
     <button class="lg" data-g="${gi}" aria-pressed="${!state.hidden.has(gi)}" ${counts[gi] ? "" : "disabled"}>
       ${swatch(gi, 14)}<span class="name">${esc(g)}</span><span class="n">${fmt(counts[gi])}</span>
     </button>`).join("");
-  const byAi = files.filter(f => f.ai).length;
-  document.getElementById("layer-note").textContent = byAi === 0
+  const byAi = files.filter(f => f.src === "ai").length, byUser = files.filter(f => f.src === "user").length;
+  const userNote = byUser ? ` ${fmt(byUser)} set by you in overrides.json.` : "";
+  document.getElementById("layer-note").textContent = (byAi === 0
     ? "Layers are guessed from folder and file names. Run /reposage:summarize to have AI classify them."
-    : `${fmt(byAi)} of ${fmt(files.length)} files were classified by AI; the rest are guessed from their path (tests stay in Tests).`;
+    : `${fmt(byAi)} of ${fmt(files.length)} files were classified by AI; the rest are guessed from their path (tests stay in Tests).`) + userNote;
 }
 legend.addEventListener("click", e => {
   const b = e.target.closest(".lg");

@@ -94,6 +94,7 @@ def run_summarize(args) -> int:
         if code != 0:
             return code
         print()
+        warn_if_ai_not_ignored(repo)
         graph = _load_json(os.path.join(repo, OUT_DIR, "graph.json"))
         summarize.print_plan(summarize.plan(repo, graph, include_tests=args.include_tests,
                                             force=args.force, limit=args.limit))
@@ -142,6 +143,9 @@ def run_dashboard(repo: str, open_browser: bool = True) -> int:
     if code != 0:
         return code
     graph = _load_json(os.path.join(repo, OUT_DIR, "graph.json"))
+    from .layers import load_overrides
+    for problem in load_overrides(repo)[1]:
+        print(f"WARNING: {problem}")
     out = os.path.join(repo, OUT_DIR, "dashboard.html")
     data = write_dashboard(graph, repo, out)
 
@@ -249,6 +253,30 @@ def _print_report(repo, graph, graph_path, parsed, reused, removed, failed,
             print(f"               {item}")
     if s["files"] == 0:
         print("  (No Python / JavaScript / TypeScript / Java files found.)")
+
+
+def warn_if_ai_not_ignored(repo: str) -> bool:
+    """.reposage/ai/ holds copies of source code sent to the AI. Projects set
+    up before it existed may not ignore it; we never edit the user's file,
+    but we say so clearly. Returns True if a warning was printed."""
+    import subprocess
+    probe = f"{OUT_DIR}/ai/plan.json"
+    try:
+        inside = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=repo,
+                                capture_output=True, text=True, timeout=20).stdout.strip() == "true"
+        if not inside:
+            return False
+        ignored = subprocess.run(["git", "check-ignore", "-q", "--no-index", probe], cwd=repo,
+                                 capture_output=True, timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if ignored:
+        return False
+    print("WARNING: .reposage/ai/ is not git-ignored in this project. It holds copies of")
+    print("         your code that are sent to the AI, so it should not be committed.")
+    print("         One-line fix:  echo \"ai/\" >> .reposage/.gitignore")
+    print()
+    return True
 
 
 def _ensure_gitignore(out_dir: str) -> None:

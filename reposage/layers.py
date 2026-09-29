@@ -12,6 +12,8 @@ than guess wildly.
 
 from __future__ import annotations
 
+import json
+import os
 import re
 
 # Display order, top to bottom: callers sit above the things they call.
@@ -75,3 +77,54 @@ def guess_layer(path: str) -> str:
             if folder in _FOLDER_HINTS[layer]:
                 return layer
     return UNCLASSIFIED
+
+
+# ----------------------------------------------------------------------
+# Who decides a file's layer: user override > AI > folder-name guess
+# ----------------------------------------------------------------------
+
+OVERRIDES_FILE = "overrides.json"
+_OVERRIDE_VALUES = LAYERS + (TESTS,)
+
+
+def load_overrides(repo: str) -> tuple[dict[str, str], list[str]]:
+    """Read .reposage/overrides.json, e.g.
+
+        {"layers": {"src/legacy/": "Utility", "app.py": "API"}}
+
+    A key ending in "/" covers a whole folder. Returns (overrides, problems);
+    a broken file never stops RepoSage, it just produces a warning.
+    """
+    path = os.path.join(repo, ".reposage", OVERRIDES_FILE)
+    if not os.path.exists(path):
+        return {}, []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except ValueError as e:
+        return {}, [f"{OVERRIDES_FILE} is not valid JSON ({e}); ignoring it"]
+    layers = data.get("layers", {}) if isinstance(data, dict) else {}
+    good, problems = {}, []
+    for key, value in (layers.items() if isinstance(layers, dict) else []):
+        if value in _OVERRIDE_VALUES:
+            key = str(key).strip()
+            good[key[2:] if key.startswith("./") else key] = value
+        else:
+            problems.append(f"{OVERRIDES_FILE}: {key!r} -> {value!r} ignored; "
+                            f"use one of {', '.join(_OVERRIDE_VALUES)}")
+    return good, problems
+
+
+def resolve_layer(path: str, ai_layer, overrides: dict[str, str]) -> tuple[str, str]:
+    """(layer, who decided it): "user", "ai" or "guess"."""
+    best = None
+    for key, layer in overrides.items():
+        match = path == key or (key.endswith("/") and path.startswith(key))
+        if match and (best is None or len(key) > len(best[0])):   # most specific wins
+            best = (key, layer)
+    if best:
+        return best[1], "user"
+    guess = guess_layer(path)
+    if ai_layer in LAYERS and guess != TESTS:
+        return ai_layer, "ai"
+    return guess, "guess"

@@ -23,7 +23,7 @@ from collections import defaultdict
 from typing import Optional
 
 from .. import __version__
-from ..layers import ALL_GROUPS, TESTS, guess_layer
+from ..layers import ALL_GROUPS, load_overrides, resolve_layer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 VENDOR = ("d3-dispatch", "d3-quadtree", "d3-timer", "d3-force")
@@ -45,14 +45,15 @@ def build_data(graph: dict, repo_root: str) -> dict:
     group_idx = {g: i for i, g in enumerate(ALL_GROUPS)}
 
     # ---- files -------------------------------------------------------
-    files = {"path": [], "lang": [], "group": [], "ai": [], "doc": [],
+    overrides, _ = load_overrides(repo_root)
+    files = {"path": [], "lang": [], "group": [], "src": [], "doc": [],
              "summary": [], "tags": [], "ext": []}
     for n in file_nodes:
-        layer, from_ai = _layer_of(n)
+        layer, source = resolve_layer(n["id"], n.get("layer"), overrides)
         files["path"].append(n["id"])
         files["lang"].append(languages.index(n.get("language", "")))
         files["group"].append(group_idx[layer])
-        files["ai"].append(1 if from_ai else 0)
+        files["src"].append({"guess": 0, "ai": 1, "user": 2}[source])
         files["doc"].append(_clip(n.get("doc", ""), DOC_LIMIT))
         files["summary"].append(n.get("summary") or "")
         files["tags"].append(n.get("tags") or [])
@@ -140,15 +141,6 @@ def write_dashboard(graph: dict, repo_root: str, out_path: str) -> dict:
 
 
 # ----------------------------------------------------------------------
-
-def _layer_of(node: dict) -> tuple[str, bool]:
-    """(layer, came_from_ai). The AI's answer wins; otherwise guess from the path."""
-    guess = guess_layer(node["id"])
-    ai = node.get("layer")
-    if ai in ALL_GROUPS and guess != TESTS:
-        return ai, True
-    return guess, False
-
 
 def _clip(text: str, limit: int) -> str:
     text = text or ""
