@@ -1,4 +1,4 @@
-"""Launcher used by the /reposage commands.
+"""Launcher used by the RepoSage skills (/reposage:scan, ...).
 
     python3 bootstrap.py scan [PATH] [--full]
 

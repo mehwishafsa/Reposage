@@ -64,7 +64,18 @@ Tree-sitter reads the code and writes a **knowledge graph** to
 `.reposage/graph.json`: files, classes, functions and methods, plus
 `contains`, `imports` and `calls` links between them.
 
-Coming next: dashboard, chat, explain, diff and onboarding commands.
+| Skill | Status | What it does |
+|-------|--------|--------------|
+| `/reposage:scan` | ✅ ready | scan the repo, build `.reposage/graph.json` |
+| `/reposage:dashboard` | 🚧 in progress | interactive graph in the browser |
+| `/reposage:chat` | planned | ask questions about the codebase |
+| `/reposage:explain` | planned | deep-dive into one file |
+| `/reposage:diff` | planned | what do my current changes affect? |
+| `/reposage:onboard` | planned | onboarding guide for new team members |
+
+Claude Code puts the plugin name in front of every skill, which is why they
+all start with `reposage:`. Claude can also run a skill on its own when you
+simply ask, e.g. "map this repo for me".
 
 ### Install
 In Claude Code:
@@ -76,8 +87,8 @@ To try a local checkout without installing it: `claude --plugin-dir /path/to/rep
 
 ### Use
 ```
-/reposage:reposage          # scan the current repo
-/reposage:reposage --full   # ignore the cache, re-parse everything
+/reposage:scan          # scan the current repo
+/reposage:scan --full   # ignore the cache, re-parse everything
 ```
 The first run sets up a private Python environment in `~/.reposage/venv`
 (about a minute, only once). It needs Python 3.10 or newer; set `REPOSAGE_HOME`
@@ -139,7 +150,9 @@ self-contained demo, not a missing piece.
 - `engine.py` — AST parse, call graph, TF-IDF retrieval, graph expansion
 - `index.html` — backend UI
 - `sample_repo/` — bundled demo codebase
-- `.claude-plugin/`, `commands/` — Claude Code plugin manifest and slash commands
+- `.claude-plugin/` — Claude Code plugin manifest + marketplace entry
+- `skills/` — the plugin's skills (`/reposage:scan`, ...), one folder each
 - `reposage/` — plugin engine (Tree-sitter parsers, graph builder, cache, bootstrap)
 - `requirements-plugin.txt` — plugin dependencies (installed into `~/.reposage/venv`)
 - `tests/` — plugin tests and small fixture projects
+- `LICENSE` — MIT

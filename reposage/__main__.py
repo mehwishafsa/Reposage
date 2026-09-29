@@ -1,6 +1,6 @@
 """Command-line entry point:  python -m reposage scan [PATH] [--full]
 
-The /reposage slash command calls this through bootstrap.py, which makes
+The /reposage:scan skill calls this through bootstrap.py, which makes
 sure the private virtual environment (with Tree-sitter) exists first.
 """
 
@@ -36,7 +36,7 @@ cache/
 """
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="reposage",
                                  description="Build a knowledge graph of a codebase.")
     ap.add_argument("--version", action="version", version=f"reposage {__version__}")
@@ -45,7 +45,11 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("path", nargs="?", default=".", help="repo folder (default: .)")
     scan.add_argument("--full", action="store_true",
                       help="ignore the cache and re-parse every file")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
 
     if args.command == "scan":
         return run_scan(os.path.abspath(args.path), full=args.full)
