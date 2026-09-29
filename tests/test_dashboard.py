@@ -110,7 +110,9 @@ class DashboardCommandTest(unittest.TestCase):
         self.assertTrue(os.path.getsize(path) > 20_000)
         self.assertIn("Open this in a browser: file://", out.getvalue())
         with open(os.path.join(repo, ".reposage", ".gitignore"), encoding="utf-8") as f:
-            self.assertIn("dashboard.html", f.read())
+            text = f.read()
+        self.assertIn("dashboard.html", text)
+        self.assertIn("ai/", text)
 
 
 if __name__ == "__main__":

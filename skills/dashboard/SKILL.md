@@ -31,8 +31,8 @@ Keep it short (under ~10 lines):
    - **Click** a node for details; solid arrows = what it uses, dashed = what uses it.
    - **Files / Symbols** switches between the file map and the function map;
      **Table** gives a sortable list; press **/** to search.
-3. If the page notes that layers are "guessed from path", mention that AI
-   classification and summaries arrive in a later RepoSage step.
+3. If files have no summaries yet (the page says layers are "guessed from
+   path"), suggest `/reposage:summarize` to add AI summaries and real layers.
 
 The dashboard is a single self-contained HTML file: it works offline and can
 be shared by sending the file. It is git-ignored by default.

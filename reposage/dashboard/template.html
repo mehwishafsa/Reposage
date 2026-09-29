@@ -341,6 +341,7 @@ const files = RAW.files.path.map((path, i) => ({
   lang: RAW.languages[RAW.files.lang[i]],
   group: RAW.files.group[i], ai: RAW.files.ai[i] === 1,
   doc: RAW.files.doc[i], summary: RAW.files.summary[i], ext: RAW.files.ext[i],
+  tags: (RAW.files.tags || [])[i] || [],
   syms: [], out: [], in: [],
 }));
 
@@ -1058,7 +1059,7 @@ const unwrap = t => t.replace(/([^\n])\n(?!\n)/g, "$1 ").replace(/[ \t]+/g, " ")
 function textSection(title, summary, doc) {
   const body = summary
     ? `<p>${esc(summary)}</p>`
-    : `<p class="placeholder">No AI summary yet — summaries are added by RepoSage's upcoming AI step.</p>`;
+    : `<p class="placeholder">No AI summary yet. Run /reposage:summarize to add one.</p>`;
   const docs = doc ? `<div class="sub">From the code's own docs</div><p>${esc(unwrap(doc))}</p>` : "";
   return `<div class="d-sec"><h2>${title}</h2>${body}${docs}</div>`;
 }
@@ -1094,6 +1095,7 @@ function renderDetail() {
         <div class="chips">
           <span class="chip">${swatch(f.group)} ${esc(GROUPS[f.group])}${f.ai ? "" : " · guessed from path"}</span>
           <span class="chip">${plural(f.syms.length, "symbol")}</span>
+          ${f.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join("")}
         </div>
         <div class="d-actions">
           <a class="btn" href="${esc(editorLink(f.path, 1))}">Open in VS Code</a>
@@ -1164,10 +1166,10 @@ function renderLegend() {
     <button class="lg" data-g="${gi}" aria-pressed="${!state.hidden.has(gi)}" ${counts[gi] ? "" : "disabled"}>
       ${swatch(gi, 14)}<span class="name">${esc(g)}</span><span class="n">${fmt(counts[gi])}</span>
     </button>`).join("");
-  const guessed = files.every(f => !f.ai);
-  document.getElementById("layer-note").textContent = guessed
-    ? "Layers are guessed from folder and file names for now. The AI step will classify them properly."
-    : "";
+  const byAi = files.filter(f => f.ai).length;
+  document.getElementById("layer-note").textContent = byAi === 0
+    ? "Layers are guessed from folder and file names. Run /reposage:summarize to have AI classify them."
+    : `${fmt(byAi)} of ${fmt(files.length)} files were classified by AI; the rest are guessed from their path (tests stay in Tests).`;
 }
 legend.addEventListener("click", e => {
   const b = e.target.closest(".lg");
@@ -1191,12 +1193,18 @@ legend.addEventListener("click", e => {
 
 const qInput = document.getElementById("q");
 const results = document.getElementById("results");
-const index = files.map(f => ({ type: "file", i: f.i, name: f.name.toLowerCase(), path: f.path.toLowerCase() }))
-  .concat(syms.map(s => ({ type: "sym", i: s.i, name: s.name.toLowerCase(), path: (files[s.file].path + "::" + s.qual).toLowerCase() })));
+const index = files.map(f => ({ type: "file", i: f.i, name: f.name.toLowerCase(), path: f.path.toLowerCase(),
+                                 text: (f.summary + " " + f.tags.join(" ")).toLowerCase() }))
+  .concat(syms.map(s => ({ type: "sym", i: s.i, name: s.name.toLowerCase(), path: (files[s.file].path + "::" + s.qual).toLowerCase(),
+                           text: s.summary.toLowerCase() })));
 
 function search(q, limit = 12) {
   q = q.trim().toLowerCase();
   if (!q) return [];
+  // "rate limit" also finds a summary that says "RateLimit-Reset": every word
+  // (3+ letters) must appear somewhere in the summary, tags or path.
+  const words = q.split(/\s+/).filter(w => w.length > 2);
+  for (const e of index) if (e.flat === undefined) e.flat = e.text.replace(/[-_]/g, "");
   const scored = [];
   for (const e of index) {
     let score = 0;
@@ -1204,6 +1212,7 @@ function search(q, limit = 12) {
     else if (e.name.startsWith(q)) score = 60;
     else if (e.name.includes(q)) score = 40;
     else if (e.path.includes(q)) score = 15;
+    else if (words.length && words.every(w => e.text.includes(w) || e.flat.includes(w) || e.path.includes(w))) score = 8;  // summary / tags
     if (score) scored.push([score + (e.type === "file" ? 3 : 0) - e.name.length / 100, e]);
   }
   scored.sort((a, b) => b[0] - a[0] || (a[1].path < b[1].path ? -1 : 1));

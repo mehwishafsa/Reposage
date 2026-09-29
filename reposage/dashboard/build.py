@@ -46,7 +46,7 @@ def build_data(graph: dict, repo_root: str) -> dict:
 
     # ---- files -------------------------------------------------------
     files = {"path": [], "lang": [], "group": [], "ai": [], "doc": [],
-             "summary": [], "ext": []}
+             "summary": [], "tags": [], "ext": []}
     for n in file_nodes:
         layer, from_ai = _layer_of(n)
         files["path"].append(n["id"])
@@ -55,6 +55,7 @@ def build_data(graph: dict, repo_root: str) -> dict:
         files["ai"].append(1 if from_ai else 0)
         files["doc"].append(_clip(n.get("doc", ""), DOC_LIMIT))
         files["summary"].append(n.get("summary") or "")
+        files["tags"].append(n.get("tags") or [])
         files["ext"].append(n.get("external_imports", []))
 
     # ---- symbols (classes, functions, methods) -----------------------

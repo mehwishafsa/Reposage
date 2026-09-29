@@ -68,6 +68,7 @@ Tree-sitter reads the code and writes a **knowledge graph** to
 |-------|--------|--------------|
 | `/reposage:scan` | ✅ ready | scan the repo, build `.reposage/graph.json` |
 | `/reposage:dashboard` | ✅ ready | interactive map of the code in the browser |
+| `/reposage:summarize` | ✅ ready | AI summaries, real layers and tags, in plain English |
 | `/reposage:chat` | planned | ask questions about the codebase |
 | `/reposage:explain` | planned | deep-dive into one file |
 | `/reposage:diff` | planned | what do my current changes affect? |
@@ -117,6 +118,37 @@ share it by sending the file.
 
 Without Claude Code: `python3 reposage/bootstrap.py dashboard /path/to/repo`
 
+### AI summaries (`/reposage:summarize`)
+Adds a 2-3 sentence plain-English summary, a layer (UI / API / Service / Data
+/ Utility) and a few tags to every source file, plus a one-line summary for
+its key functions and classes. Written for someone in their first week on
+the team.
+
+1. **Plan**: picks the files that need it and shows an estimate before anything runs:
+   ```
+   To summarize   31 files (+ 64 key functions/classes) in 4 batches
+   Skipped        56 test files, 0 generated/vendored
+   Estimated size ~30,000 input + ~7,000 output tokens (Haiku agents)
+   ```
+2. **Run**: sends the batches to Claude **Haiku** (4 at a time, no tools, the
+   instructions in `agents/summarizer.md`) through your own Claude Code.
+   No API key needed. Each answer is checked and saved as soon as it arrives,
+   so an interrupted run just continues next time.
+3. **Dashboard**: summaries, tags and AI layers appear in it; search also
+   looks inside summaries.
+
+It stays affordable:
+- **Incremental:** only files whose content changed are summarized again.
+- **Skipped:** tests and generated code are left out by default, and near-empty
+  files get a fixed summary without asking the AI.
+- **Measured costs:** ky (31 files) took $0.19 in 1.5 min, RepoSage (19 files)
+  $0.19, and re-summarizing one changed file $0.02.
+
+Options: `--include-tests`, `--limit N` (only the N most connected files),
+`--force` (redo everything). Without Claude Code:
+`python3 reposage/bootstrap.py summarize plan .` then `summarize run .`.
+**The AI's layer always wins** over the folder-name guess.
+
 ### How it works
 | Step | File | What it does |
 |------|------|--------------|
@@ -124,7 +156,8 @@ Without Claude Code: `python3 reposage/bootstrap.py dashboard /path/to/repo`
 | 2 | `reposage/cache.py` | reuses parse results for files whose hash didn't change |
 | 3 | `reposage/parsers/*.py` | Tree-sitter parses one file → definitions, imports, calls |
 | 4 | `reposage/graph_builder.py` | links names across files → nodes + edges, sorted |
-| 5 | `reposage/dashboard/` | packs the graph + page into `dashboard.html` (`template.html` is the app) |
+| 5 | `reposage/summarize.py` + `agents/summarizer.md` | AI summaries, layers and tags (batched, incremental) |
+| 6 | `reposage/dashboard/` | packs the graph + page into `dashboard.html` (`template.html` is the app) |
 
 The output is **deterministic**: the same code always gives a byte-identical
 `graph.json` (no timestamps, no absolute paths, everything sorted). Each
@@ -132,16 +165,18 @@ The output is **deterministic**: the same code always gives a byte-identical
 - `high`: resolved exactly, through an import, the same file, `self`/`this`, or a declared Java type.
 - `medium`: `obj.method()` where the type of `obj` is unknown, but only one method with that name exists in the repo.
 
-The `summary`, `layer` and `tags` fields are left empty for AI agents to fill
-in later. They are kept across re-scans for files that didn't change.
+The `summary`, `layer` and `tags` fields are filled in by `/reposage:summarize`.
+They are kept across re-scans for files that didn't change.
 
 ### Sharing `graph.json` with your team
 `.reposage/` contains its own `.gitignore`:
 - **`graph.json` is not ignored.** Commit it if you want your team to share one
   map of the codebase. It only changes when code changes, so diffs stay
   meaningful, and teammates can use it without scanning first.
-- **`cache/` and `dashboard.html` are ignored.** They are local files that
-  RepoSage rebuilds whenever it needs to.
+- **`cache/`, `ai/` and `dashboard.html` are ignored.** They are local files
+  that RepoSage rebuilds whenever it needs to (`ai/` holds copies of your code
+  sent for summarizing). Summaries themselves live in `graph.json`, so a
+  committed graph shares them with the team.
 - **To keep everything private**, replace the contents of `.reposage/.gitignore`
   with a single `*` line (or add `.reposage/` to your root `.gitignore`).
   RepoSage never overwrites that file once it exists.
@@ -176,6 +211,7 @@ self-contained demo, not a missing piece.
 - `sample_repo/` — bundled demo codebase
 - `.claude-plugin/` — Claude Code plugin manifest + marketplace entry
 - `skills/` — the plugin's skills (`/reposage:scan`, ...), one folder each
+- `agents/summarizer.md` — instructions for the AI that writes summaries
 - `reposage/` — plugin engine (Tree-sitter parsers, graph builder, cache, bootstrap)
 - `requirements-plugin.txt` — plugin dependencies (installed into `~/.reposage/venv`)
 - `tests/` — plugin tests and small fixture projects

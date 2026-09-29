@@ -49,7 +49,8 @@ _NAME_HINTS = [
                            r"|(util|utils|helper|helpers)$", re.I)),
 ]
 
-_TEST_DIRS = {"test", "tests", "__tests__", "spec", "specs", "testing", "e2e"}
+# Test folders: "test", "tests", "__tests__", "spec", "e2e", and variants like "test-d".
+_TEST_DIR = re.compile(r"^(__tests__|tests?|specs?|testing|e2e)([-_.].*)?$")
 _TEST_FILE = re.compile(r"^(test_.*|.*_test|.*\.(test|spec)|.*Tests?|conftest)$")
 
 
@@ -60,7 +61,7 @@ def guess_layer(path: str) -> str:
     base = name.rsplit(".", 1)[0]          # "user.test.ts" -> "user.test"
     stem = base.split(".")[0]              # "user.test"    -> "user"
 
-    if any(p in _TEST_DIRS for p in parts[:-1]) or _TEST_FILE.match(base):
+    if any(_TEST_DIR.match(p) for p in parts[:-1]) or _TEST_FILE.match(base):
         return TESTS
     if name.endswith((".tsx", ".jsx")):
         return "UI"

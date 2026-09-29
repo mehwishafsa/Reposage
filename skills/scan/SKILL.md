@@ -35,7 +35,8 @@ Give the user a short summary based on the scanner output:
 Then, to make the result tangible, read `.reposage/graph.json` and name the
 3–5 most connected functions (the most `calls` edges in + out). These are
 usually the heart of the codebase. Keep the whole reply under ~15 lines, and
-end by suggesting `/reposage:dashboard` to explore the graph visually.
+end by suggesting `/reposage:dashboard` to explore the graph visually and
+`/reposage:summarize` to add plain-English summaries.
 
 If the scanner printed "RepoSage setup failed", show the user the error and the
 hint it printed. Don't try to install packages any other way.

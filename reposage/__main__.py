@@ -29,10 +29,12 @@ GITIGNORE = """\
 #   graph.json  The knowledge graph. Commit it if you want your team to share
 #               one map of the codebase; it only changes when code changes.
 #   cache/      Local parse cache. Machine-specific, never commit it.
+#   ai/         Work files of /reposage:summarize (they contain copies of your code).
 #   dashboard.html  Generated page (/reposage:dashboard); rebuilt on demand.
 #
 # To keep everything private instead, replace the lines below with:  *
 cache/
+ai/
 dashboard.html
 *.tmp
 """
@@ -52,6 +54,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
     dash.add_argument("path", nargs="?", default=".", help="repo folder (default: .)")
     dash.add_argument("--no-open", action="store_true",
                       help="only write the file, don't open a browser")
+    summ = sub.add_parser("summarize", help="AI summaries: plan batches, save answers")
+    ssub = summ.add_subparsers(dest="action", required=True)
+    sp = ssub.add_parser("plan", help="scan, choose files, write batches, show the estimate")
+    sp.add_argument("path", nargs="?", default=".")
+    sp.add_argument("--include-tests", action="store_true", help="summarize test files too")
+    sp.add_argument("--force", action="store_true", help="summarize again even if up to date")
+    sp.add_argument("--limit", type=int, help="only the N most connected files")
+    sp.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)  # used by the skill, not here
+    sr = ssub.add_parser("run", help="send the planned batches to Claude (Haiku) and save the answers")
+    sr.add_argument("path", nargs="?", default=".")
+    sr.add_argument("--model", default="haiku", help="Claude model for the summaries (default: haiku)")
+    sr.add_argument("--parallel", type=int, default=4, help="batches at the same time (default: 4)")
+    ss = ssub.add_parser("save", help="check one batch's JSON answer and merge it into the graph")
+    ss.add_argument("batch", type=int)
+    ss.add_argument("path", nargs="?", default=".")
+    ss.add_argument("--file", help="answer file (default: .reposage/ai/answer-NNN.json; '-' = stdin)")
     return ap
 
 
@@ -60,9 +78,60 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "scan":
         return run_scan(os.path.abspath(args.path), full=args.full)
+    if args.command == "summarize":
+        return run_summarize(args)
     if args.command == "dashboard":
         return run_dashboard(os.path.abspath(args.path), open_browser=not args.no_open)
     return 1
+
+
+def run_summarize(args) -> int:
+    from . import summarize
+
+    repo = os.path.abspath(args.path)
+    if args.action == "plan":
+        code = run_scan(repo)
+        if code != 0:
+            return code
+        print()
+        graph = _load_json(os.path.join(repo, OUT_DIR, "graph.json"))
+        summarize.print_plan(summarize.plan(repo, graph, include_tests=args.include_tests,
+                                            force=args.force, limit=args.limit))
+        return 0
+
+    if args.action == "run":
+        if not os.path.exists(os.path.join(repo, OUT_DIR, "ai", "plan.json")):
+            print("RepoSage: no summarize plan found; run `summarize plan` first.", file=sys.stderr)
+            return 2
+        try:
+            totals = summarize.run(repo, model=args.model, parallel=args.parallel,
+                                   say=lambda m: print(m, flush=True))
+        except RuntimeError as e:
+            print(f"RepoSage: {e}", file=sys.stderr)
+            return 2
+        return 1 if totals["failed"] else 0
+
+    # save: an answer written to .reposage/ai/answer-NNN.json (or stdin)
+    if not os.path.exists(os.path.join(repo, OUT_DIR, "ai", "plan.json")):
+        print("RepoSage: no summarize plan found; run `summarize plan` first.", file=sys.stderr)
+        return 2
+    answer_path = args.file or os.path.join(repo, OUT_DIR, "ai", f"answer-{args.batch:03d}.json")
+    if answer_path == "-":
+        answer = sys.stdin.read()
+    else:
+        try:
+            with open(answer_path, encoding="utf-8") as fh:
+                answer = fh.read()
+        except OSError:
+            print(f"Batch {args.batch}: no answer file at {answer_path}", file=sys.stderr)
+            return 1
+    files, symbols, problems = summarize.save(repo, args.batch, answer)
+    done, total = summarize.progress(repo)
+    print(f"Batch {args.batch}: saved {files} file summaries and {symbols} function/class summaries.")
+    for p in problems:
+        print(f"  problem: {p}")
+    print(f"Progress: {done} of {total} planned files summarized.")
+    return 1 if files == 0 else 0
 
 
 def run_dashboard(repo: str, open_browser: bool = True) -> int:
