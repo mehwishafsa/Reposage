@@ -11,6 +11,7 @@ To guarantee that we
   - resolve ambiguous names by rules, never by "whichever came first".
 
 How a call like `auth.login(x)` inside main.py gets linked to a function:
+  0. `repo.x()`, repo's type known -> method x of that class (Java)
   1. `self.x()` / `this.x()`      -> method x of the caller's own class
   2. plain `x()`                  -> x defined in an enclosing scope or the same
                                      file, or imported by name into this file
@@ -28,7 +29,7 @@ from typing import Optional
 
 from . import __version__
 from .parsers import parser_for
-from .parsers.base import Call, Definition, FileFacts
+from .parsers.base import CLASS_KINDS, Call, Definition, FileFacts
 
 SCHEMA_VERSION = 1
 
@@ -102,7 +103,7 @@ def _make_nodes(facts_by_path: dict[str, FileFacts],
         # Imports that point outside the repo (packages, standard library).
         external = sorted({
             imp.source for imp in f.imports
-            if imp.source and resolver.resolve_module(path, imp.source) is None
+            if imp.source and not resolver.resolve_modules(path, imp.source)
         })
         nodes.append({
             "id": path,
@@ -182,9 +183,9 @@ def _make_edges(facts_by_path: dict[str, FileFacts],
 
         # imports: file -> file (only files inside the repo)
         for imp in f.imports:
-            target = resolver.resolve_module(path, imp.source)
-            if target and target != path:
-                add(path, target, "imports", line=imp.line)
+            for target in resolver.resolve_modules(path, imp.source):
+                if target != path:
+                    add(path, target, "imports", line=imp.line)
         for b in f.bindings:
             # `from pkg import submodule` also depends on pkg/submodule.py
             target = resolver.binding_target(path, b)[0]
@@ -237,6 +238,11 @@ class _Resolver:
                 source, from_path, self.known_files) if parser else None
         return self._module_cache[key]
 
+    def resolve_modules(self, from_path: str, source: str) -> list[str]:
+        parser = parser_for(from_path)
+        return parser.resolve_import_many(source, from_path, self.known_files) \
+            if parser else []
+
     def binding_target(self, path: str, b) -> tuple[Optional[str], str]:
         """Where an imported name points: (file, name-inside-file or "*")."""
         target = self.resolve_module(path, b.source)
@@ -272,6 +278,15 @@ class _Resolver:
         """Return (target id, confidence) or None if we can't tell."""
         f = self.facts[path]
         name, recv = call.name, call.receiver
+
+        # 0. the receiver's declared type is known (Java): repo.save()
+        if call.receiver_type:
+            cls = self._find_class(path, call.receiver_type)
+            if cls is None:
+                return None   # e.g. `String s; s.charAt(0)` -- not our code
+            hit = self.members[cls].get(name)
+            if hit:
+                return hit, "high"
 
         # 1. self.x() / this.x()
         if recv in SELF_WORDS:
@@ -325,8 +340,14 @@ class _Resolver:
                 if hit:
                     return hit, "high"
             local_cls = self.top_level[path].get(recv)      # static call on a local class
-            if local_cls and self.defs[local_cls].kind in ("class", "interface"):
+            if local_cls and self.defs[local_cls].kind in CLASS_KINDS:
                 hit = self.members[local_cls].get(name)
+                if hit:
+                    return hit, "high"
+            if f.language == "java" and "." not in recv and recv[:1].isupper():
+                # `Helpers.log()`: a class from the same package needs no import.
+                cls = self._find_class(path, recv)
+                hit = self.members[cls].get(name) if cls else None
                 if hit:
                     return hit, "high"
 
@@ -347,10 +368,25 @@ class _Resolver:
             return table.get("default") or table.get(local)
         return table.get(name)
 
+    def _find_class(self, path: str, type_name: str) -> Optional[str]:
+        """Class called `type_name` as seen from `path`: imported, defined in
+        the same file, or the only class with that name in the repo."""
+        bound = self.bindings(path).get(type_name)
+        if bound and bound[0]:
+            hit = self._in_file(bound[0], bound[1], type_name)
+            if hit:
+                return hit
+        hit = self.top_level[path].get(type_name)
+        if hit:
+            return hit
+        classes = [c for c in self.by_name.get(type_name, [])
+                   if self.defs[c].kind in CLASS_KINDS]
+        return classes[0] if len(classes) == 1 else None
+
     def _enclosing_class(self, def_id: str) -> Optional[str]:
         cur = self.defs.get(def_id)
         while cur is not None:
-            if cur.kind in ("class", "interface"):
+            if cur.kind in CLASS_KINDS:
                 return cur.id
             cur = self.defs.get(cur.parent) if cur.parent else None
         return None
@@ -361,7 +397,7 @@ class _Resolver:
         In Python/JS a bare name never refers to a class member, in Java it does."""
         cur = self.defs.get(def_id)
         while cur is not None:
-            if cur.kind not in ("class", "interface") or class_members_visible:
+            if cur.kind not in CLASS_KINDS or class_members_visible:
                 hit = self.members[cur.id].get(name)
                 if hit:
                     return hit

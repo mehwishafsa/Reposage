@@ -32,7 +32,8 @@ LOCK = os.path.join(HOME, "setup.lock")
 
 MIN_PYTHON = (3, 10)          # required by the tree-sitter packages
 CHECK_IMPORTS = ("tree_sitter", "tree_sitter_python",
-                 "tree_sitter_javascript", "tree_sitter_typescript")
+                 "tree_sitter_javascript", "tree_sitter_typescript",
+                 "tree_sitter_java")
 
 
 def say(msg: str) -> None:
@@ -121,7 +122,7 @@ def setup(base_python: str) -> None:
         shutil.rmtree(VENV, ignore_errors=True)
         run_quiet([base_python, "-m", "venv", VENV], "create the virtual environment")
 
-        say("  -> installing Tree-sitter parsers (Python, JavaScript, TypeScript)")
+        say("  -> installing Tree-sitter parsers (Python, JavaScript, TypeScript, Java)")
         py = venv_python()
         run_quiet([py, "-m", "pip", "install", "--disable-pip-version-check",
                    "--no-input", "--quiet", "-r", REQUIREMENTS],

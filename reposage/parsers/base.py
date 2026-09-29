@@ -20,6 +20,10 @@ from typing import Iterable, Optional
 from tree_sitter import Language, Node, Parser
 
 
+# Definition kinds that can contain methods.
+CLASS_KINDS = ("class", "interface", "enum", "record")
+
+
 # --------------------------------------------------------------------------
 # The facts a parser extracts from one file
 # --------------------------------------------------------------------------
@@ -29,7 +33,7 @@ class Definition:
     """A class, function, method or interface defined in a file."""
     id: str                 # stable ID, e.g. "src/auth.py::User.login"
     name: str               # short name, e.g. "login"
-    kind: str               # "class" | "interface" | "function" | "method"
+    kind: str               # "class" | "interface" | "enum" | "record" | "function" | "method"
     parent: Optional[str]   # ID of the enclosing definition (None = top level)
     start_line: int         # 1-based, inclusive
     end_line: int
@@ -65,6 +69,9 @@ class Call:
     name: str               # the called name: `login` in `auth.login(x)`
     receiver: Optional[str] # `auth` in `auth.login(x)`; None for plain `login(x)`
     line: int
+    # Declared type of the receiver when the language tells us (Java:
+    # `UserRepo repo; repo.save()` -> "UserRepo"). None if unknown.
+    receiver_type: Optional[str] = None
 
 
 @dataclass
@@ -135,6 +142,13 @@ class LanguageParser:
                        known_files: set[str]) -> Optional[str]:
         """Map an import string to a file in the repo, or None if external."""
         return None
+
+    def resolve_import_many(self, source: str, from_path: str,
+                            known_files: set[str]) -> list[str]:
+        """All repo files an import refers to. Usually 0 or 1; a Java
+        wildcard import (`import a.b.*`) can refer to a whole package."""
+        one = self.resolve_import(source, from_path, known_files)
+        return [one] if one else []
 
 
 # --------------------------------------------------------------------------

@@ -40,7 +40,7 @@ hint it printed. Don't try to install packages any other way.
 
 ## Notes for the user (mention only if relevant)
 
-- Re-run `/reposage` any time; only changed files are parsed again.
-- Use `/reposage --full` to ignore the cache and re-parse everything.
+- Re-run `/reposage:reposage` any time; only changed files are parsed again.
+- Use `/reposage:reposage --full` to ignore the cache and re-parse everything.
 - `.reposage/graph.json` can be committed to share one map of the codebase with
   the team. `.reposage/cache/` is local and already git-ignored.

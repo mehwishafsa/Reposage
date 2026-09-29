@@ -15,7 +15,7 @@ def graph_bytes(repo: str) -> bytes:
 
 class DeterminismTest(unittest.TestCase):
     def test_same_code_same_graph(self):
-        for fixture in ("py_project", "js_project"):
+        for fixture in ("py_project", "js_project", "java_project"):
             a, b = copy_fixture(fixture), copy_fixture(fixture)   # different folders
             scan(a)
             scan(b)

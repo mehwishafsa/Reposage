@@ -139,7 +139,7 @@ def _print_report(repo, graph, graph_path, parsed, reused, removed, failed,
         for item in failed[:10]:
             print(f"               {item}")
     if s["files"] == 0:
-        print("  (No Python / JavaScript / TypeScript files found.)")
+        print("  (No Python / JavaScript / TypeScript / Java files found.)")
 
 
 def _ensure_gitignore(out_dir: str) -> None:

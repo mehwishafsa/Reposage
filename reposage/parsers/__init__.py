@@ -9,10 +9,11 @@ from __future__ import annotations
 from typing import Optional
 
 from .base import FileFacts, LanguageParser
+from .java_parser import JavaParser
 from .javascript_parser import JavaScriptParser
 from .python_parser import PythonParser
 
-_PARSER_CLASSES = [PythonParser, JavaScriptParser]
+_PARSER_CLASSES = [PythonParser, JavaScriptParser, JavaParser]
 
 _by_ext: dict[str, LanguageParser] = {}
 _by_name: dict[str, LanguageParser] = {}
