@@ -67,7 +67,7 @@ Tree-sitter reads the code and writes a **knowledge graph** to
 | Skill | Status | What it does |
 |-------|--------|--------------|
 | `/reposage:scan` | ✅ ready | scan the repo, build `.reposage/graph.json` |
-| `/reposage:dashboard` | 🚧 in progress | interactive graph in the browser |
+| `/reposage:dashboard` | ✅ ready | interactive map of the code in the browser |
 | `/reposage:chat` | planned | ask questions about the codebase |
 | `/reposage:explain` | planned | deep-dive into one file |
 | `/reposage:diff` | planned | what do my current changes affect? |
@@ -97,6 +97,26 @@ changed.
 
 Without Claude Code: `python3 reposage/bootstrap.py scan /path/to/repo`
 
+### The dashboard (`/reposage:dashboard`)
+Scans (incrementally), then writes **`.reposage/dashboard.html`** and opens it.
+It is one self-contained file: no server and no internet needed, and you can
+share it by sending the file.
+
+- **Strata layout**: one horizontal band per architectural layer (UI → API →
+  Service → Data → Utility). Callers sit above the code they use, so an
+  arrow pointing *up* is worth a second look.
+- **Files / Symbols**: a map of files, or of every class and function.
+- **Click** a node for its summary, docs, signature and connections (solid
+  arrows = what it uses, dashed = what uses it). **/** searches everything;
+  **Table** is a sortable list (and the accessible alternative to the map).
+- Layers are **guessed from folder and file names** until the AI step
+  classifies them. Tests are hidden by default (toggle them in the legend).
+- Stays fast on big repos: gson (264 files, 4,249 symbols, 7,095 calls) opens
+  in about 0.5 s and redraws in about 3 ms per frame. `graph.json` is repacked into a compact
+  column format for the page (6.4 MB → 0.9 MB).
+
+Without Claude Code: `python3 reposage/bootstrap.py dashboard /path/to/repo`
+
 ### How it works
 | Step | File | What it does |
 |------|------|--------------|
@@ -104,6 +124,7 @@ Without Claude Code: `python3 reposage/bootstrap.py scan /path/to/repo`
 | 2 | `reposage/cache.py` | reuses parse results for files whose hash didn't change |
 | 3 | `reposage/parsers/*.py` | Tree-sitter parses one file → definitions, imports, calls |
 | 4 | `reposage/graph_builder.py` | links names across files → nodes + edges, sorted |
+| 5 | `reposage/dashboard/` | packs the graph + page into `dashboard.html` (`template.html` is the app) |
 
 The output is **deterministic**: the same code always gives a byte-identical
 `graph.json` (no timestamps, no absolute paths, everything sorted). Each
@@ -119,7 +140,8 @@ in later. They are kept across re-scans for files that didn't change.
 - **`graph.json` is not ignored.** Commit it if you want your team to share one
   map of the codebase. It only changes when code changes, so diffs stay
   meaningful, and teammates can use it without scanning first.
-- **`cache/` is ignored.** It is a local, machine-specific parse cache.
+- **`cache/` and `dashboard.html` are ignored.** They are local files that
+  RepoSage rebuilds whenever it needs to.
 - **To keep everything private**, replace the contents of `.reposage/.gitignore`
   with a single `*` line (or add `.reposage/` to your root `.gitignore`).
   RepoSage never overwrites that file once it exists.
@@ -127,6 +149,8 @@ in later. They are kept across re-scans for files that didn't change.
 ### Tests
 ```bash
 ~/.reposage/venv/bin/python -m unittest discover -s tests -t .
+# optional, needs Node + Playwright: click through a dashboard in a real browser
+node tests/browser_smoke.js .reposage/dashboard.html
 ```
 
 ---
@@ -155,4 +179,4 @@ self-contained demo, not a missing piece.
 - `reposage/` — plugin engine (Tree-sitter parsers, graph builder, cache, bootstrap)
 - `requirements-plugin.txt` — plugin dependencies (installed into `~/.reposage/venv`)
 - `tests/` — plugin tests and small fixture projects
-- `LICENSE` — MIT
+- `LICENSE` — MIT (bundled d3 modules: ISC, see `reposage/dashboard/vendor/LICENSE-d3.txt`)

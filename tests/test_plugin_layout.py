@@ -8,7 +8,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Skills that must exist. Add new ones here as they are built.
-EXPECTED_SKILLS = {"scan"}
+EXPECTED_SKILLS = {"scan", "dashboard"}
 
 
 def read(*parts: str) -> str:

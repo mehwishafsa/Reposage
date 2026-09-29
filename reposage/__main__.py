@@ -29,9 +29,11 @@ GITIGNORE = """\
 #   graph.json  The knowledge graph. Commit it if you want your team to share
 #               one map of the codebase; it only changes when code changes.
 #   cache/      Local parse cache. Machine-specific, never commit it.
+#   dashboard.html  Generated page (/reposage:dashboard); rebuilt on demand.
 #
 # To keep everything private instead, replace the lines below with:  *
 cache/
+dashboard.html
 *.tmp
 """
 
@@ -45,6 +47,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     scan.add_argument("path", nargs="?", default=".", help="repo folder (default: .)")
     scan.add_argument("--full", action="store_true",
                       help="ignore the cache and re-parse every file")
+    dash = sub.add_parser("dashboard",
+                          help="scan, then write and open .reposage/dashboard.html")
+    dash.add_argument("path", nargs="?", default=".", help="repo folder (default: .)")
+    dash.add_argument("--no-open", action="store_true",
+                      help="only write the file, don't open a browser")
     return ap
 
 
@@ -53,7 +60,36 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "scan":
         return run_scan(os.path.abspath(args.path), full=args.full)
+    if args.command == "dashboard":
+        return run_dashboard(os.path.abspath(args.path), open_browser=not args.no_open)
     return 1
+
+
+def run_dashboard(repo: str, open_browser: bool = True) -> int:
+    """Refresh the graph (incremental, so usually instant), then build the page."""
+    from .dashboard.build import write_dashboard   # only needed here
+
+    code = run_scan(repo)
+    if code != 0:
+        return code
+    graph = _load_json(os.path.join(repo, OUT_DIR, "graph.json"))
+    out = os.path.join(repo, OUT_DIR, "dashboard.html")
+    data = write_dashboard(graph, repo, out)
+
+    url = "file://" + ("" if out.startswith("/") else "/") + out.replace(os.sep, "/")
+    opened = False
+    if open_browser:
+        import webbrowser
+        try:
+            opened = webbrowser.open(url)
+        except Exception:  # no browser available (e.g. a remote server)
+            opened = False
+    print()
+    print(f"RepoSage dashboard: {os.path.relpath(out, repo)} "
+          f"({os.path.getsize(out) / 1024:.0f} KB, {len(data['files']['path'])} files, "
+          f"{len(data['sym']['name'])} symbols)")
+    print(f"  {'Opened in your browser' if opened else 'Open this in a browser'}: {url}")
+    return 0
 
 
 def run_scan(repo: str, full: bool = False) -> int:
