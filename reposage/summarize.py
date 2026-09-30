@@ -73,7 +73,7 @@ def plan(repo: str, graph: dict, include_tests: bool = False, force: bool = Fals
     rule_based: dict[str, str] = {}
     for f in files:
         path = f["id"]
-        if f.get("summary") and not force:
+        if f.get("summary") and not f.get("ai_stale") and not force:
             skipped["done"].append(path)
             continue
         if guess_layer(path) == TESTS and not include_tests:
@@ -360,7 +360,7 @@ def _batch_done(repo: str, batch: dict) -> bool:
     by_id = {n["id"]: n for n in graph["nodes"]}
     for f in batch["files"]:
         node = by_id.get(f["path"])
-        if (node is None or not node.get("summary")
+        if (node is None or not node.get("summary") or node.get("ai_stale")
                 or graph["files"].get(f["path"], {}).get("hash") != f["hash"]):
             return False
     return True
@@ -381,6 +381,7 @@ def _merge(repo: str, updates: dict[str, dict]) -> tuple[int, list[str]]:
             stale.append(path)
             continue
         node["summary"] = up["summary"]
+        node.pop("ai_stale", None)                 # fresh again
         if "layer" in up:
             node["layer"] = up["layer"]
         if "tags" in up:
@@ -388,6 +389,7 @@ def _merge(repo: str, updates: dict[str, dict]) -> tuple[int, list[str]]:
         for sym_id, text in up.get("symbols", {}).items():
             if sym_id in by_id:
                 by_id[sym_id]["summary"] = text
+                by_id[sym_id].pop("ai_stale", None)
         saved += 1
     write_json_atomic(os.path.join(repo, ".reposage", "graph.json"), graph)
     return saved, stale

@@ -47,7 +47,7 @@ def build_data(graph: dict, repo_root: str) -> dict:
     # ---- files -------------------------------------------------------
     overrides, _ = load_overrides(repo_root)
     files = {"path": [], "lang": [], "group": [], "src": [], "doc": [],
-             "summary": [], "tags": [], "ext": []}
+             "summary": [], "stale": [], "tags": [], "ext": []}
     for n in file_nodes:
         layer, source = resolve_layer(n["id"], n.get("layer"), overrides)
         files["path"].append(n["id"])
@@ -56,6 +56,7 @@ def build_data(graph: dict, repo_root: str) -> dict:
         files["src"].append({"guess": 0, "ai": 1, "user": 2}[source])
         files["doc"].append(_clip(n.get("doc", ""), DOC_LIMIT))
         files["summary"].append(n.get("summary") or "")
+        files["stale"].append(1 if n.get("ai_stale") else 0)
         files["tags"].append(n.get("tags") or [])
         files["ext"].append(n.get("external_imports", []))
 
@@ -144,10 +145,16 @@ def write_dashboard(graph: dict, repo_root: str, out_path: str) -> dict:
 # ----------------------------------------------------------------------
 
 def _answers(repo_root: str, sym_idx: dict, file_idx: dict) -> list[dict]:
-    """Saved Answer Paths (from /reposage:chat), with steps as node indexes."""
+    """Saved Answer Paths (/reposage:chat) and change views (/reposage:diff),
+    with node ids turned into indexes."""
     from ..chat import load_answers
     out = []
     for rec in load_answers(repo_root):
+        if rec.get("kind") == "diff":
+            view = _diff_view(rec, sym_idx, file_idx)
+            if view:
+                out.append(view)
+            continue
         steps = []
         for st in rec.get("steps", []):
             if st["id"] in sym_idx:
@@ -159,6 +166,26 @@ def _answers(repo_root: str, sym_idx: dict, file_idx: dict) -> list[dict]:
                                                  "confidence", "confidence_note", "hops")}
                        | {"steps": steps})
     return out
+
+
+def _diff_view(rec: dict, sym_idx: dict, file_idx: dict) -> Optional[dict]:
+    nodes = [{"i": sym_idx[n["id"]], "role": n["role"], "depth": n["depth"],
+              "tested": n.get("tested", False), "guessed": n.get("guessed", False),
+              "status": n.get("status", "")}
+             for n in rec.get("nodes", []) if n["id"] in sym_idx]
+    links = [{"s": sym_idx[l["source"]], "t": sym_idx[l["target"]], "high": l.get("confidence") == "high"}
+             for l in rec.get("links", []) if l["source"] in sym_idx and l["target"] in sym_idx]
+    changed_files = [file_idx[p] for p in rec.get("files_changed", []) if p in file_idx]
+    if not nodes and not changed_files:
+        return None
+    return {"kind": "diff", "id": rec["id"], "question": rec.get("question", ""),
+            "answer": rec.get("answer", ""), "created": rec.get("created", ""),
+            "risk": rec.get("risk", ""), "reasons": rec.get("reasons", []),
+            "nodes": nodes, "links": links, "changed_files": changed_files,
+            # a test is a function, or a whole test file (top-level test(...) calls)
+            "tests": [{"type": "sym", "i": sym_idx[t]} if t in sym_idx else {"type": "file", "i": file_idx[t]}
+                      for t in rec.get("tests", []) if t in sym_idx or t in file_idx],
+            "removed": rec.get("removed", [])}
 
 
 def _clip(text: str, limit: int) -> str:

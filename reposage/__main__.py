@@ -67,6 +67,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     cp.add_argument("--answer", default="", help="the answer in one or two sentences")
     cp.add_argument("--repo", default=".", help="repo folder (default: .)")
     cp.add_argument("--no-open", action="store_true", help="don't open a browser")
+    df = sub.add_parser("diff", help="what do the current git changes affect?")
+    df.add_argument("--repo", default=".", help="repo folder (default: .)")
+    df.add_argument("--base", help="compare with where this branch left BASE (e.g. main); "
+                                   "default: uncommitted changes")
+    df.add_argument("--depth", type=int, default=3, help="how many levels of callers (default: 3)")
+    df.add_argument("--note", help="add a plain-English explanation to the latest change view")
+    df.add_argument("--no-open", action="store_true", help="don't open a browser")
     summ = sub.add_parser("summarize", help="AI summaries: plan batches, save answers")
     ssub = summ.add_subparsers(dest="action", required=True)
     sp = ssub.add_parser("plan", help="scan, choose files, write batches, show the estimate")
@@ -98,6 +105,8 @@ def main(argv: list[str] | None = None) -> int:
                              answer=args.answer)
     if args.command == "chat":
         return run_chat(args)
+    if args.command == "diff":
+        return run_diff(args)
     return 1
 
 
@@ -177,6 +186,45 @@ def run_chat(args) -> int:
         print(f"  problem: {p}")
     with contextlib.redirect_stdout(io.StringIO()):
         run_dashboard(repo, open_browser=False)
+    return open_dashboard(repo, not args.no_open, record["id"])
+
+
+def run_diff(args) -> int:
+    import contextlib
+    import io
+    from . import diff
+
+    repo = os.path.abspath(args.repo)
+    if args.note:
+        record = diff.add_summary(repo, args.note)
+        if record is None:
+            print("RepoSage: no change view yet; run `diff` first.", file=sys.stderr)
+            return 1
+        with contextlib.redirect_stdout(io.StringIO()):
+            run_dashboard(repo, open_browser=False)
+        print("Explanation added to the change view.")
+        return open_dashboard(repo, not args.no_open, record["id"])
+
+    with contextlib.redirect_stdout(io.StringIO()):       # keep the output for Claude short
+        code = run_scan(repo)
+    if code != 0:
+        return code
+    graph = _load_json(os.path.join(repo, OUT_DIR, "graph.json"))
+    try:
+        changes = diff.read_changes(repo, args.base)
+    except diff.DiffError as e:
+        print(f"RepoSage: {e}", file=sys.stderr)
+        return 2
+    if not changes["files"]:
+        print(f"No {changes['label']} found.")
+        return 0
+    analysis = diff.analyze(repo, graph, changes, max_depth=args.depth)
+    print(diff.render_pack(repo, analysis))
+    record = diff.save_view(repo, analysis)
+    with contextlib.redirect_stdout(io.StringIO()):
+        run_dashboard(repo, open_browser=False)
+    print()
+    print(f"Change view saved (risk {record['risk']}).")
     return open_dashboard(repo, not args.no_open, record["id"])
 
 

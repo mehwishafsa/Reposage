@@ -56,7 +56,10 @@ class DeterminismTest(unittest.TestCase):
             f.write("\n# changed\n")
         graph, _ = scan(repo)
         self.assertEqual(node(graph, "shop/models.py::Order")["summary"], "AI summary")
-        self.assertIsNone(node(graph, "shop/utils.py::slugify")["summary"])  # stale -> cleared
+        stale = node(graph, "shop/utils.py::slugify")
+        self.assertEqual(stale["summary"], "AI summary")      # kept as a hint...
+        self.assertTrue(stale["ai_stale"])                    # ...but marked out of date
+        self.assertNotIn("ai_stale", node(graph, "shop/models.py::Order"))
 
     def test_gitignore_created_once(self):
         repo = copy_fixture("py_project")

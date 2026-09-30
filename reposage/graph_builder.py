@@ -138,7 +138,12 @@ def _make_nodes(facts_by_path: dict[str, FileFacts],
 
 def _carry_over_ai_fields(nodes: list[dict], hashes: dict[str, str],
                           previous: Optional[dict]) -> None:
-    """Keep AI-written summaries for files whose content hasn't changed."""
+    """Keep AI-written summaries across scans.
+
+    Unchanged file: kept as they are. Changed file: kept too (an old summary
+    is still a useful hint, e.g. for /reposage:diff) but marked
+    "ai_stale": true, so /reposage:summarize writes them again and the
+    dashboard can say they may be out of date."""
     if not previous:
         return
     old_hashes = {p: v.get("hash") for p, v in previous.get("files", {}).items()}
@@ -146,11 +151,15 @@ def _carry_over_ai_fields(nodes: list[dict], hashes: dict[str, str],
     for node in nodes:
         path = node["path"]
         old = old_nodes.get(node["id"])
-        if old is None or old_hashes.get(path) != hashes.get(path):
+        if old is None:
             continue
+        carried = False
         for key in AI_FIELDS:
             if old.get(key) not in (None, "", []):
                 node[key] = old[key]
+                carried = True
+        if carried and (old.get("ai_stale") or old_hashes.get(path) != hashes.get(path)):
+            node["ai_stale"] = True
 
 
 # ----------------------------------------------------------------------

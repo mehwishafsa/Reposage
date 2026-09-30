@@ -40,6 +40,9 @@
   --l4: #e87ba4;  /* Utility   pink   ▲ */
   --l5: #a3a29c;  /* Unclassified (neutral) */
   --l6: #c4c3bd;  /* Tests (neutral) */
+  /* Change view (/reposage:diff): validated pair, distinct from the layers */
+  --chg: #e34948;  /* changed code */
+  --aff: #4a3aa7;  /* directly affected */
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
@@ -50,7 +53,7 @@
     --band: rgba(255, 255, 255, 0.03); --line: rgba(255, 255, 255, 0.10);
     --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86; --edge-rgb: 255, 255, 255;
     --l0: #3987e5; --l1: #d95926; --l2: #199e70; --l3: #c98500; --l4: #d55181;
-    --l5: #6f6e69; --l6: #4a4946;
+    --l5: #6f6e69; --l6: #4a4946; --chg: #e66767; --aff: #9085e9;
   }
 }
 :root[data-theme="dark"] {
@@ -59,7 +62,7 @@
   --band: rgba(255, 255, 255, 0.03); --line: rgba(255, 255, 255, 0.10);
   --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86; --edge-rgb: 255, 255, 255;
   --l0: #3987e5; --l1: #d95926; --l2: #199e70; --l3: #c98500; --l4: #d55181;
-  --l5: #6f6e69; --l6: #4a4946;
+  --l5: #6f6e69; --l6: #4a4946; --chg: #e66767; --aff: #9085e9;
 }
 
 * { box-sizing: border-box; }
@@ -223,6 +226,12 @@ canvas#map.pointing { cursor: pointer; }
 .steps .lbl { display: block; }
 .steps .loc { display: block; color: var(--text-3); font-size: 12px; font-family: var(--mono); overflow-wrap: anywhere; }
 .steps .hop { color: var(--text-3); font-size: 11px; padding-left: 32px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.dot.chg { background: var(--chg); } .dot.aff { background: var(--aff); }
+.dot.ind { background: transparent; border: 2px solid var(--aff); opacity: 0.6; }
+.risk { font-weight: 700; color: var(--text); }
+.reasons { margin: 4px 0 0; padding-left: 18px; color: var(--text-2); }
+.tested { color: var(--text-3); font-size: 11px; }
 .top select { font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line);
   border-radius: 8px; padding: 4px 8px; max-width: 240px; }
 .focus-note b { color: var(--text); }
@@ -386,6 +395,7 @@ const files = RAW.files.path.map((path, i) => ({
   src: ["guess", "ai", "user"][RAW.files.src[i]],     // who decided the layer
   doc: RAW.files.doc[i], summary: RAW.files.summary[i], ext: RAW.files.ext[i],
   tags: (RAW.files.tags || [])[i] || [],
+  stale: (RAW.files.stale || [])[i] === 1,          // changed since it was summarized
   syms: [], out: [], in: [],
 }));
 
@@ -728,6 +738,7 @@ function readColors() {
   colors = {
     surface: v("--surface"), band: v("--band"), text: v("--text"), text2: v("--text-2"),
     text3: v("--text-3"), edge: v("--edge-rgb"), layer: GROUPS.map((_, g) => v(`--l${g}`)),
+    chg: v("--chg"), aff: v("--aff"),
   };
 }
 
@@ -869,17 +880,25 @@ function draw() {
   const hits = searchHits(view);
   const route = routeFor(view);
   const onRoute = route ? new Set(route.map(r => r.i)) : null;
-  const lit = n => onRoute ? onRoute.has(n.i) || (focus && n.i === focus.i)
-                           : !focus || n.i === focus.i || focus.out.has(n.i) || focus.inn.has(n.i);
-  for (const pass of [0, 1]) {                 // pass 0: dimmed, pass 1: normal
-    if (pass === 0 && !focus && !onRoute) continue;
-    ctx.globalAlpha = pass === 0 ? (onRoute ? 0.12 : 0.18) : 1;
+  const impact = diffFor(view);          // change view: role of each affected node
+  // 0 = faded, 1 = half (indirectly affected), 2 = normal
+  const level = n => {
+    if (focus && n.i === focus.i) return 2;
+    if (impact) { const r = impact.roles.get(n.i); return !r ? 0 : r.role === "indirect" ? 1 : 2; }
+    if (onRoute) return onRoute.has(n.i) ? 2 : 0;
+    return !focus || focus.out.has(n.i) || focus.inn.has(n.i) ? 2 : 0;
+  };
+  const faded = onRoute || impact ? 0.12 : 0.18;
+  for (const pass of [0, 1, 2]) {
+    if (pass === 0 && !focus && !onRoute && !impact) continue;
+    if (pass === 1 && !impact) continue;
+    ctx.globalAlpha = [faded, 0.5, 1][pass];
     for (let g = 0; g < GROUPS.length; g++) {
       if (hidden.has(g)) continue;
       ctx.beginPath();
       let any = false;
       for (const n of N) {
-        if (n.group !== g || !onScreen(n) || (lit(n) ? pass === 0 : pass === 1)) continue;
+        if (n.group !== g || !onScreen(n) || level(n) !== pass) continue;
         shapePath(ctx, SHAPES[g], n.px, n.py, n.r);
         any = true;
       }
@@ -903,6 +922,8 @@ function draw() {
   // 3c. The Answer Path: a bold route from step to step.
   //     solid = a real call, dashed = a guessed call, dotted = no call found
   if (route) drawRoute(route, k);
+  // 3d. The change view: ripple links + coloured rings.
+  if (impact) drawImpact(impact, k, ring);
   ctx.restore();
 
   // 3c. Folder names, top-left of each outline, once it is wide enough on screen.
@@ -943,8 +964,9 @@ function draw() {
     }
   }
 
-  // 6. Numbered badges of the Answer Path, on top of everything.
+  // 6. Numbered badges of the Answer Path / "Δ" on changed code, on top of everything.
   drawRouteBadges(view);
+  drawImpactBadges(view);
 }
 
 /* ---- Answer Path ------------------------------------------------------
@@ -954,7 +976,7 @@ function draw() {
 
 function routeFor(view) {
   const ans = state.answer;
-  if (!ans || !view.laidOut) return null;
+  if (!ans || ans.kind === "diff" || !view.laidOut) return null;
   const out = [];
   ans.steps.forEach((st, k) => {
     let i;
@@ -1017,6 +1039,140 @@ function drawRouteBadges(view) {
   ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
 }
 
+/* ---- Change view (/reposage:diff) -------------------------------------
+   changed code = red ring + "Δ", directly affected = violet ring,
+   indirectly affected = half faded, everything else faded.
+   Links point from the caller to the code it calls; dashed = guessed. */
+
+const ROLE_RANK = { changed: 3, direct: 2, indirect: 1 };
+
+function diffFor(view) {
+  const ans = state.answer;
+  if (!ans || ans.kind !== "diff" || !view.laidOut) return null;
+  if (view.name === "syms") {
+    const roles = new Map(ans.nodes.map(n => [n.i, n]));
+    return { roles, links: ans.links };
+  }
+  // Files view: a file takes the strongest role of the code inside it.
+  const roles = new Map();
+  const put = (fi, info) => {
+    const cur = roles.get(fi);
+    if (!cur || ROLE_RANK[info.role] > ROLE_RANK[cur.role]) roles.set(fi, info);
+  };
+  ans.changed_files.forEach(fi => put(fi, { role: "changed", depth: 0 }));
+  ans.nodes.forEach(n => put(syms[n.i].file, n));
+  const seen = new Set(), links = [];
+  for (const l of ans.links) {
+    const s = syms[l.s].file, t = syms[l.t].file, key = s + ">" + t;
+    if (s !== t && !seen.has(key)) { seen.add(key); links.push({ s, t, high: l.high }); }
+  }
+  return { roles, links };
+}
+
+function drawImpact(impact, k, ring) {
+  const N = VIEWS[state.view].nodes;
+  for (const l of impact.links) {
+    const a = N[l.s], b = N[l.t];
+    if (state.hidden.has(a.group) || state.hidden.has(b.group)) continue;
+    const role = (impact.roles.get(l.s) || {}).role;
+    ctx.globalAlpha = role === "indirect" ? 0.55 : 1;
+    ctx.strokeStyle = colors.aff; ctx.fillStyle = colors.aff;
+    ctx.lineWidth = 2 / k;
+    ctx.setLineDash(l.high ? [] : [6 / k, 4 / k]);
+    ctx.beginPath(); ctx.moveTo(a.px, a.py); ctx.lineTo(b.px, b.py); ctx.stroke();
+    const ang = Math.atan2(b.py - a.py, b.px - a.px), tip = b.r + 7 / k, sz = 7 / k;
+    const tx = b.px - Math.cos(ang) * tip, ty = b.py - Math.sin(ang) * tip;
+    ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - Math.cos(ang - 0.5) * sz, ty - Math.sin(ang - 0.5) * sz);
+    ctx.lineTo(tx - Math.cos(ang + 0.5) * sz, ty - Math.sin(ang + 0.5) * sz);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  for (const [i, info] of impact.roles) {
+    const n = N[i];
+    if (state.hidden.has(n.group)) continue;
+    if (info.role === "changed") ring(n, 3, colors.chg, 4);
+    else if (info.role === "direct") ring(n, 2.5, colors.aff, 3);
+    else { ctx.globalAlpha = 0.6; ring(n, 1.5, colors.aff, 3); ctx.globalAlpha = 1; }
+  }
+}
+
+function drawImpactBadges(view) {
+  const impact = diffFor(view);
+  if (!impact) return;
+  ctx.font = "700 11px " + getComputedStyle(document.body).fontFamily;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const [i, info] of impact.roles) {
+    if (info.role !== "changed") continue;
+    const n = view.nodes[i];
+    const [sx, sy] = toScreen(n.px, n.py);
+    const x = sx - n.r * cam.k - 12, y = sy - n.r * cam.k - 8;
+    ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fillStyle = colors.surface; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 8.5, 0, Math.PI * 2); ctx.fillStyle = colors.chg; ctx.fill();
+    ctx.fillStyle = colors.surface; ctx.fillText("Δ", x, y + 0.5);
+  }
+  ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
+}
+
+function renderDiffBar(ans) {
+  const count = role => ans.nodes.filter(n => n.role === role).length;
+  const untested = ans.nodes.filter(n => n.role !== "indirect" && !n.tested).length;
+  answerBar.innerHTML = `
+    <div class="kicker">Change impact <span class="conf">Risk: <span class="risk">${esc(ans.risk)}</span></span>
+      <span class="spacer"></span>
+      <button class="btn" id="answer-close" title="Back to the full map (Esc)">Close</button></div>
+    <div class="q">${esc(ans.question)}</div>
+    ${ans.answer ? `<p class="a">${esc(ans.answer)}</p>` : `<p class="a">${esc(ans.reasons[0] || "")}</p>`}
+    <div class="route">
+      <span class="chip"><span class="dot chg"></span>Changed · ${count("changed")}</span>
+      <span class="chip"><span class="dot aff"></span>Directly affected · ${count("direct")}</span>
+      <span class="chip"><span class="dot ind"></span>Indirectly affected · ${count("indirect")}</span>
+      <span class="chip">${untested ? `⚠ ${untested} with no tests` : "✓ all covered by tests"}</span>
+      <span class="chip">- - dashed = guessed link</span>
+    </div>`;
+  answerBar.classList.add("on");
+}
+
+function renderDiffDetail(ans) {
+  const row = n => {
+    const s = syms[n.i];
+    const tests = n.role === "indirect" ? "" : n.tested ? "✓ tested" : "⚠ no tests";
+    return `<li><button data-type="sym" data-i="${n.i}">${swatch(s.group)}<span class="t">${esc(s.qual)}</span>
+      <span class="m">${esc(tests)}${n.guessed ? " · guessed link" : ""}</span></button></li>`;
+  };
+  const group = (title, list) => list.length ? `<div class="sub">${esc(title)} · ${list.length}</div><ul class="rel">${list.map(row).join("")}</ul>` : "";
+  const byDepth = d => ans.nodes.filter(n => n.depth === d && n.role !== "changed");
+  const depths = [...new Set(ans.nodes.map(n => n.depth))].filter(d => d > 0).sort();
+  detail.innerHTML = `
+    <div class="d-head">
+      <div class="d-kind">Change impact · ${esc((ans.created || "").replace("T", " ").slice(0, 16))}</div>
+      <h1 class="d-name">Risk: ${esc(ans.risk)}</h1>
+      <ul class="reasons">${ans.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+    </div>
+    ${ans.answer ? `<div class="d-sec"><h2>In plain English</h2><p>${esc(ans.answer)}</p></div>` : ""}
+    <div class="d-sec"><h2>What changed</h2>${group("Changed functions", ans.nodes.filter(n => n.role === "changed"))}
+      ${ans.removed.length ? `<div class="sub">Removed</div><p class="mono">${esc(ans.removed.join(", "))}</p>` : ""}</div>
+    <div class="d-sec"><h2>What could be affected</h2>
+      ${depths.map(d => group(d === 1 ? "Directly (calls the changed code)" : `Indirectly, ${d} steps away`, byDepth(d))).join("") || '<p class="placeholder">Nothing else in the repo calls the changed code.</p>'}</div>
+    <div class="d-sec"><h2>Tests that exercise it</h2>${ans.tests.length ? `<ul class="rel">${ans.tests.map(t => {
+      const it = t.type === "sym" ? { g: syms[t.i].group, name: syms[t.i].qual, where: files[syms[t.i].file].name }
+                                  : { g: files[t.i].group, name: files[t.i].name, where: "test file" };
+      return `<li><button data-type="${t.type}" data-i="${t.i}">${swatch(it.g)}<span class="t">${esc(it.name)}</span><span class="m">${esc(it.where)}</span></button></li>`;
+    }).join("")}</ul>` : '<p class="placeholder">No test reaches the changed code.</p>'}</div>`;
+}
+
+function fitImpact() {
+  const view = VIEWS[state.view], impact = diffFor(view);
+  if (!impact || !impact.roles.size) return fit(true);
+  const pts = [...impact.roles.keys()].map(i => view.nodes[i]);
+  const xs = pts.map(n => n.px), ys = pts.map(n => n.py);
+  const { w, h } = size();
+  const top = answerBar.offsetHeight + 40;
+  const bw = Math.max(120, Math.max(...xs) - Math.min(...xs)), bh = Math.max(120, Math.max(...ys) - Math.min(...ys));
+  const kk = Math.max(0.3, Math.min(2.2, (w - 260) / bw, (h - top - 60) / bh));
+  moveTo((Math.max(...xs) + Math.min(...xs)) / 2, (Math.max(...ys) + Math.min(...ys)) / 2 - top / 2 / kk, kk);
+}
+
 const answerBar = document.getElementById("answer-bar");
 const CONFIDENCE = {
   high: "✓ High confidence",
@@ -1032,12 +1188,15 @@ function enterAnswer(id) {
   const sel = document.getElementById("answers");
   sel.value = id;
   // Show the layers the path goes through, even if they were hidden (e.g. Tests).
-  const groups = new Set(ans.steps.map(st => (st.type === "sym" ? syms[st.i].group : files[st.i].group)));
+  const groups = new Set(ans.kind === "diff"
+    ? ans.nodes.map(n => syms[n.i].group).concat(ans.changed_files.map(fi => files[fi].group))
+    : ans.steps.map(st => (st.type === "sym" ? syms[st.i].group : files[st.i].group)));
   groups.forEach(g => state.hidden.delete(g));
   renderLegend();
   try { history.replaceState(null, "", "#answer=" + encodeURIComponent(id)); } catch (_) {}
-  const wanted = ans.steps.some(st => st.type === "sym") ? "syms" : "files";
-  const show = () => { renderAnswerBar(); renderDetail(); fitRoute(); };
+  const wanted = ans.kind === "diff" ? (ans.nodes.length ? "syms" : "files")
+    : ans.steps.some(st => st.type === "sym") ? "syms" : "files";
+  const show = () => { renderAnswerBar(); renderDetail(); ans.kind === "diff" ? fitImpact() : fitRoute(); };
   const v = VIEWS[wanted];
   const needsLayout = !v.laidOut || [...groups].some(g => !v.layoutGroups.has(g));
   if (state.view !== wanted || needsLayout) setView(wanted, show);   // setView lays out if needed
@@ -1076,6 +1235,7 @@ function stepItem(st) {
 function renderAnswerBar() {
   const ans = state.answer;
   if (!ans) { answerBar.classList.remove("on"); return; }
+  if (ans.kind === "diff") { renderDiffBar(ans); return; }
   const chips = ans.steps.map((st, k) => {
     const it = stepItem(st);
     const hop = k > 0 ? (ans.hops || [])[k - 1] : null;
@@ -1102,6 +1262,7 @@ answerBar.addEventListener("click", e => {
 
 function renderAnswerDetail() {
   const ans = state.answer;
+  if (ans.kind === "diff") { renderDiffDetail(ans); return; }
   const rows = ans.steps.map((st, k) => {
     const it = stepItem(st);
     const hop = k < ans.steps.length - 1 ? (ans.hops || [])[k] : null;
@@ -1146,6 +1307,9 @@ function drawLabels(view, focus, hits, onScreen) {
   const important = [];
   const route = routeFor(view);
   if (route) route.forEach(r => important.push(view.nodes[r.i]));
+  const impact = diffFor(view);
+  if (impact) [...impact.roles.entries()].sort((a, b) => a[1].depth - b[1].depth)
+    .forEach(([i]) => important.push(view.nodes[i]));
   if (focus) {
     important.push(view.nodes[focus.i]);
     focus.out.forEach(i => important.push(view.nodes[i]));
@@ -1291,9 +1455,9 @@ function relList(title, rows, limit = 40) {
 /** Docstrings are hard-wrapped in the source; join lines back into paragraphs. */
 const unwrap = t => t.replace(/([^\n])\n(?!\n)/g, "$1 ").replace(/[ \t]+/g, " ");
 
-function textSection(title, summary, doc) {
+function textSection(title, summary, doc, stale) {
   const body = summary
-    ? `<p>${esc(summary)}</p>`
+    ? `<p>${esc(summary)}</p>${stale ? '<p class="placeholder">May be out of date: the file changed after this was written. Run /reposage:summarize to refresh it.</p>' : ""}`
     : `<p class="placeholder">No AI summary yet. Run /reposage:summarize to add one.</p>`;
   const docs = doc ? `<div class="sub">From the code's own docs</div><p>${esc(unwrap(doc))}</p>` : "";
   return `<div class="d-sec"><h2>${title}</h2>${body}${docs}</div>`;
@@ -1338,7 +1502,7 @@ function renderDetail() {
           <button class="btn" data-copy="${esc(f.path)}">Copy path</button>
         </div>
       </div>
-      ${textSection("Summary", f.summary, f.doc)}
+      ${textSection("Summary", f.summary, f.doc, f.stale)}
       <div class="d-sec"><h2>Connections</h2>
         ${relList("Depends on", deps) || '<div class="sub">Depends on no other file in the repo</div>'}
         ${relList("Used by", users) || '<div class="sub">No other file in the repo uses it</div>'}
@@ -1370,7 +1534,7 @@ function renderDetail() {
         </div>
       </div>
       ${s.sig ? `<div class="d-sec"><h2>Signature</h2><pre class="sig">${esc(s.sig)}</pre></div>` : ""}
-      ${textSection("Summary", s.summary, s.doc)}
+      ${textSection("Summary", s.summary, s.doc, f.stale)}
       <div class="d-sec"><h2>Calls</h2>
         ${relList("Calls", calls) || '<div class="sub">Calls nothing else in the repo</div>'}
         ${relList("Called by", callers) || '<div class="sub">Not called from anywhere in the repo</div>'}
@@ -1553,7 +1717,8 @@ function setView(name, then) {
   const view = VIEWS[name];
   const stale = view.laidOut && [...GROUPS.keys()].some(g => !state.hidden.has(g) && !view.layoutGroups.has(g));
   // With an Answer Path open, frame the route; otherwise the whole map.
-  const frame = () => (state.answer && routeFor(view) ? fitRoute() : fit(false));
+  const frame = () => (state.answer && routeFor(view) ? fitRoute()
+                       : state.answer && diffFor(view) ? fitImpact() : fit(false));
   if (view.laidOut && !stale) { placeVisible(view); frame(); then && then(); requestDraw(); }
   else layoutView(view, () => { frame(); then && then(); requestDraw(); });
 }
@@ -1612,8 +1777,8 @@ setView("files");
 const answersMenu = document.getElementById("answers");
 if ((RAW.answers || []).length) {
   answersMenu.hidden = false;
-  answersMenu.innerHTML = `<option value="">Answer paths (${RAW.answers.length})</option>` +
-    RAW.answers.map(a => `<option value="${esc(a.id)}">${esc(a.question)}</option>`).join("");
+  answersMenu.innerHTML = `<option value="">Answers & changes (${RAW.answers.length})</option>` +
+    RAW.answers.map(a => `<option value="${esc(a.id)}">${a.kind === "diff" ? "Δ " : ""}${esc(a.question)}</option>`).join("");
   answersMenu.onchange = () => (answersMenu.value ? enterAnswer(answersMenu.value) : exitAnswer());
 }
 const openFromHash = () => {

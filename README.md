@@ -71,7 +71,7 @@ Tree-sitter reads the code and writes a **knowledge graph** to
 | `/reposage:summarize` | ✅ ready | AI summaries, real layers and tags, in plain English |
 | `/reposage:chat` | ✅ ready | ask questions; get a cited answer + an Answer Path |
 | `/reposage:explain` | planned | deep-dive into one file |
-| `/reposage:diff` | planned | what do my current changes affect? |
+| `/reposage:diff` | ✅ ready | what do my changes affect, and how risky are they? |
 | `/reposage:onboard` | planned | onboarding guide for new team members |
 
 Claude Code puts the plugin name in front of every skill, which is why they
@@ -166,6 +166,32 @@ Options: `--include-tests`, `--limit N` (only the N most connected files),
    guessed call, dotted = no call found. Reopen any path from the dashboard's
    **Answer paths** menu, or with `bootstrap.py dashboard --answer latest`.
 
+### Change impact (`/reposage:diff`)
+```
+/reposage:diff                 # uncommitted changes
+/reposage:diff --base main     # everything since this branch left main
+```
+1. **Changed code**: git's changed lines are mapped to the functions that
+   contain them. Changed signatures, new functions, and removed functions
+   that something still calls are flagged. Comment-only edits are ignored.
+2. **Ripple effect**: who calls the changed code (depth 1), who calls them
+   (depth 2), and so on up to `--depth` (default 3). Guessed links are marked.
+3. **Tests**: a test covers code if it reaches it through calls. Affected
+   code that no test reaches is listed as *no tests*.
+4. **Risk (Low / Medium / High)**: from simple, stated rules, e.g. a changed
+   signature with callers, a removed function still in use, a big ripple, or
+   untested code with callers. Claude may move it one level, with a reason.
+5. **Change view**: the dashboard shows changed code in red (Δ), directly
+   affected code in violet, indirectly affected code faded, and guessed
+   links dashed.
+
+Only the changed functions (with the changed lines marked) and the calling
+line of each affected function are sent to Claude. That's about $0.07 per run.
+
+Tested on RepoSage (`verify_password` gets a `min_length`: Claude spotted
+that existing users with short passwords would be locked out) and on ky
+(retry limit capped at 10).
+
 ### Your own layer choices (`.reposage/overrides.json`)
 ```json
 { "layers": { "src/legacy/": "Utility", "app.py": "API" } }
@@ -182,6 +208,7 @@ Precedence: **your override > AI > folder-name guess**.
 | 4 | `reposage/graph_builder.py` | links names across files → nodes + edges, sorted |
 | 5 | `reposage/summarize.py` + `agents/summarizer.md` | AI summaries, layers and tags (batched, incremental) |
 | 6 | `reposage/rag.py` + `reposage/chat.py` | question → relevant code → cited answer → Answer Path |
+| 6b | `reposage/diff.py` | git changes → ripple through callers → tests → risk → change view |
 | 7 | `reposage/dashboard/` | packs the graph + page into `dashboard.html` (`template.html` is the app) |
 
 The output is **deterministic**: the same code always gives a byte-identical

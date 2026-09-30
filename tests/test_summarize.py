@@ -98,6 +98,9 @@ class SaveTest(unittest.TestCase):
             f.write("\n\ndef shout(t):\n    return t.upper()\n")
         p = plan_for(repo)
         self.assertEqual([f["path"] for b in p["batches"] for f in b["files"]], ["shop/utils.py"])
+        self.assertTrue(node(graph_of(repo), "shop/utils.py")["ai_stale"])     # old summary kept, flagged
+        summarize.save(repo, 1, answer_for(p, 1))
+        self.assertNotIn("ai_stale", node(graph_of(repo), "shop/utils.py"))   # fresh again
 
     def test_bad_answers_are_reported_not_fatal(self):
         repo = copy_fixture("py_project")
