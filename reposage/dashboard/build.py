@@ -131,9 +131,12 @@ def render_html(data: dict) -> str:
                 .replace("__REPOSAGE_DATA__", payload))
 
 
-def write_dashboard(graph: dict, repo_root: str, out_path: str) -> dict:
-    """Build and save the dashboard; returns the compact data for reporting."""
+def write_dashboard(graph: dict, repo_root: str, out_path: str, public: bool = False) -> dict:
+    """Build and save the dashboard; returns the compact data for reporting.
+    public=True leaves out the local folder path (used for editor links)."""
     data = build_data(graph, repo_root)
+    if public:
+        data["root"] = ""
     html = render_html(data)
     tmp = out_path + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:

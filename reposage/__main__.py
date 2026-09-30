@@ -54,6 +54,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     dash.add_argument("path", nargs="?", default=".", help="repo folder (default: .)")
     dash.add_argument("--answer", metavar="ID",
                       help="open with a saved Answer Path shown ('latest' for the newest)")
+    dash.add_argument("--out", help="write the page here instead of .reposage/dashboard.html")
+    dash.add_argument("--public", action="store_true",
+                      help="for publishing: leave out local folder paths (no 'Open in VS Code')")
     dash.add_argument("--no-open", action="store_true",
                       help="only write the file, don't open a browser")
     chat = sub.add_parser("chat", help="questions about the code, and Answer Paths")
@@ -102,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_summarize(args)
     if args.command == "dashboard":
         return run_dashboard(os.path.abspath(args.path), open_browser=not args.no_open,
-                             answer=args.answer)
+                             answer=args.answer, out=args.out, public=args.public)
     if args.command == "chat":
         return run_chat(args)
     if args.command == "diff":
@@ -254,7 +257,8 @@ def open_dashboard(repo: str, open_browser: bool, answer: str | None = None) -> 
     return 0
 
 
-def run_dashboard(repo: str, open_browser: bool = True, answer: str | None = None) -> int:
+def run_dashboard(repo: str, open_browser: bool = True, answer: str | None = None,
+                  out: str | None = None, public: bool = False) -> int:
     """Refresh the graph (incremental, so usually instant), then build the page."""
     from .dashboard.build import write_dashboard   # only needed here
 
@@ -265,8 +269,14 @@ def run_dashboard(repo: str, open_browser: bool = True, answer: str | None = Non
     from .layers import load_overrides
     for problem in load_overrides(repo)[1]:
         print(f"WARNING: {problem}")
+    if out:
+        # Written somewhere else (e.g. for GitHub Pages): print where, don't open.
+        data = write_dashboard(graph, repo, os.path.abspath(out), public=public)
+        print(f"RepoSage dashboard written to {out} ({os.path.getsize(out) / 1024:.0f} KB, "
+              f"{len(data.get('answers', []))} saved answers/changes)")
+        return 0
     out = os.path.join(repo, OUT_DIR, "dashboard.html")
-    data = write_dashboard(graph, repo, out)
+    data = write_dashboard(graph, repo, out, public=public)
 
     print()
     print(f"RepoSage dashboard: {os.path.relpath(out, repo)} "

@@ -170,3 +170,16 @@ class AiIgnoreWarningTest(unittest.TestCase):
         self.assertIn('echo "ai/" >> .reposage/.gitignore', out.getvalue())
         with open(os.path.join(repo, ".reposage", ".gitignore")) as f:
             self.assertEqual(f.read(), "cache/\n")    # we never touch the user's file
+
+
+class PublicBuildTest(unittest.TestCase):
+    def test_public_page_has_no_local_paths(self):
+        from reposage.__main__ import main
+        repo = copy_fixture("py_project")
+        out_file = os.path.join(repo, "public.html")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["dashboard", repo, "--public", "--out", out_file]), 0)
+        with open(out_file, encoding="utf-8") as f:
+            html = f.read()
+        self.assertIn('"root":""', html)
+        self.assertNotIn(os.path.dirname(repo), html)          # no temp/home folder anywhere

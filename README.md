@@ -81,9 +81,12 @@ simply ask, e.g. "map this repo for me".
 ### Install
 In Claude Code:
 ```
-/plugin marketplace add mehwishafsa/reposage
+/plugin marketplace add mehwishafsa/Reposage#plugin-version
 /plugin install reposage@reposage
 ```
+(Once the plugin is merged into `main`, the `#plugin-version` part can go.)
+
+**Live demo, nothing to install:** https://mehwishafsa.github.io/Reposage/demo/
 To try a local checkout without installing it: `claude --plugin-dir /path/to/reposage`.
 
 ### Use
@@ -257,6 +260,7 @@ self-contained demo, not a missing piece.
 
 ## Files
 - `docs/index.html` — static visualizer (deploys to Pages)
+- `docs/demo/` — live plugin demo: landing page + ready-made dashboards (built with `dashboard --public --out`)
 - `app.py` — FastAPI server + LLM synthesis
 - `engine.py` — AST parse, call graph, TF-IDF retrieval, graph expansion
 - `index.html` — backend UI

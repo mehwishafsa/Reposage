@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RepoSage · live demo</title>
+<meta name="description" content="RepoSage is a Claude Code plugin that maps your codebase, explains it in plain English, and shows every answer as a path through the code.">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f3f2ee; --surface: #fcfcfb; --surface-2: #f6f5f1; --line: rgba(11, 11, 11, 0.10);
+  --text: #0b0b0b; --text-2: #52514e; --text-3: #7b7a75;
+  --l0: #2a78d6; --l1: #eb6834; --l2: #1baf7a; --l3: #eda100; --l4: #e87ba4;
+  --chg: #e34948; --aff: #4a3aa7;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #111110; --surface: #1a1a19; --surface-2: #232321; --line: rgba(255, 255, 255, 0.10);
+    --text: #ffffff; --text-2: #c3c2b7; --text-3: #8f8e86;
+    --l0: #3987e5; --l1: #d95926; --l2: #199e70; --l3: #c98500; --l4: #d55181;
+    --chg: #e66767; --aff: #9085e9;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 var(--sans); }
+a { color: inherit; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+header.top { display: flex; align-items: center; gap: 10px; padding: 18px 0; }
+header.top b { font-size: 15px; }
+header.top nav { margin-left: auto; display: flex; gap: 16px; font-size: 14px; color: var(--text-2); }
+header.top nav a { text-decoration: none; }
+header.top nav a:hover { text-decoration: underline; }
+
+.hero { padding: 48px 0 36px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 40px; align-items: center; }
+.hero h1 { font-size: clamp(30px, 4.4vw, 46px); line-height: 1.08; letter-spacing: -0.025em; margin: 0 0 16px; }
+.hero p.lead { font-size: 18px; color: var(--text-2); margin: 0 0 26px; max-width: 34em; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 10px; font-weight: 600;
+  text-decoration: none; border: 1px solid var(--line); background: var(--surface); }
+.btn.primary { background: var(--text); color: var(--surface); border-color: var(--text); }
+.btn:hover { filter: brightness(1.08); }
+.hint { color: var(--text-3); font-size: 13px; }
+
+/* the strata illustration: the dashboard's idea in miniature */
+.strata { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.strata svg { width: 100%; height: auto; display: block; }
+
+section { padding: 30px 0; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); margin: 0 0 14px; font-weight: 650; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.card { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border-radius: 12px; text-decoration: none;
+  background: var(--surface); border: 1px solid var(--line); transition: transform .12s ease, border-color .12s ease; }
+.card:hover { transform: translateY(-2px); border-color: var(--text-3); }
+.card .kind { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.card .q { font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+.card .d { color: var(--text-2); font-size: 14px; }
+.card .meta { margin-top: auto; padding-top: 6px; font-size: 13px; color: var(--text-3); }
+.num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--text); color: var(--surface); font-size: 11px; font-weight: 700; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.step code { font: 600 13px var(--mono); }
+.step p { margin: 6px 0 0; color: var(--text-2); font-size: 14px; }
+
+pre.install { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px;
+  font: 14px/1.7 var(--mono); overflow-x: auto; }
+pre.install .c { color: var(--text-3); }
+.note { color: var(--text-2); font-size: 14px; margin: 10px 0 0; }
+
+footer { border-top: 1px solid var(--line); margin-top: 30px; padding: 22px 0 40px; color: var(--text-3); font-size: 13px; }
+footer p { margin: 4px 0; }
+
+@media (max-width: 760px) {
+  .hero { grid-template-columns: 1fr; padding-top: 24px; }
+  header.top nav { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true">
+      <rect x="2" y="3" width="13" height="4" rx="2" fill="var(--l0)"/>
+      <rect x="5" y="9" width="13" height="4" rx="2" fill="var(--l2)"/>
+      <rect x="8" y="15" width="12" height="4" rx="2" fill="var(--l4)"/>
+    </svg>
+    <b>RepoSage</b>
+    <nav>
+      <a href="#demos">Demos</a>
+      <a href="#install">Install</a>
+      <a href="../">Original demo</a>
+      <a href="https://github.com/mehwishafsa/Reposage/tree/plugin-version">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <div>
+      <h1>See how your code connects, and what your change will break.</h1>
+      <p class="lead">RepoSage is a Claude Code plugin. It maps your codebase with Tree-sitter, explains it
+        in plain English for new teammates, and shows every answer as a path through the code.</p>
+      <div class="cta">
+        <a class="btn primary" href="ky.html#answer=20260929-160517-how-does-retry-work">Try the live demo →</a>
+        <a class="btn" href="#install">Install</a>
+      </div>
+      <p class="hint">Nothing to install for the demo: each page is a single file that runs in your browser.</p>
+    </div>
+    <div class="strata" aria-hidden="true">
+      <!-- miniature of the dashboard: layer bands and a numbered route -->
+      <svg viewBox="0 0 420 250">
+        <rect x="0" y="0" width="420" height="62" rx="6" fill="var(--surface-2)"/>
+        <rect x="0" y="126" width="420" height="62" rx="6" fill="var(--surface-2)"/>
+        <g font-family="system-ui, sans-serif" font-size="10" font-weight="600" fill="var(--text-3)">
+          <text x="10" y="16">API</text><text x="10" y="79">SERVICE</text>
+          <text x="10" y="142">DATA</text><text x="10" y="205">UTILITY</text>
+        </g>
+        <g opacity="0.22">
+          <rect x="70" y="28" width="12" height="12" fill="var(--l1)"/><rect x="330" y="30" width="10" height="10" fill="var(--l1)"/>
+          <path d="M120 95l7 7-7 7-7-7z" fill="var(--l2)"/><path d="M300 90l7 7-7 7-7-7z" fill="var(--l2)"/>
+          <circle cx="90" cy="160" r="6" fill="var(--l3)"/><circle cx="260" cy="158" r="6" fill="var(--l3)"/>
+          <path d="M150 208l7 12h-14z" fill="var(--l4)"/><path d="M360 212l7 12h-14z" fill="var(--l4)"/>
+        </g>
+        <path d="M200 34 C 190 70, 222 80, 212 102" fill="none" stroke="var(--text)" stroke-width="2.5"/>
+        <path d="M212 102 C 170 118, 150 140, 150 158" fill="none" stroke="var(--text)" stroke-width="2.5"/>
+        <path d="M212 102 C 250 130, 262 180, 262 214" fill="none" stroke="var(--text)" stroke-width="2.5" stroke-dasharray="6 4"/>
+        <rect x="193" y="27" width="14" height="14" fill="var(--l1)"/>
+        <path d="M212 94l8 8-8 8-8-8z" fill="var(--l2)"/>
+        <circle cx="150" cy="160" r="7" fill="var(--l3)"/>
+        <path d="M262 206l8 14h-16z" fill="var(--l4)"/>
+        <g font-family="system-ui, sans-serif" font-size="11" font-weight="700" text-anchor="middle">
+          <circle cx="182" cy="24" r="9" fill="var(--text)"/><text x="182" y="28" fill="var(--surface)">1</text>
+          <circle cx="232" cy="92" r="9" fill="var(--text)"/><text x="232" y="96" fill="var(--surface)">2</text>
+          <circle cx="132" cy="152" r="9" fill="var(--text)"/><text x="132" y="156" fill="var(--surface)">3</text>
+          <circle cx="282" cy="206" r="9" fill="var(--text)"/><text x="282" y="210" fill="var(--surface)">4</text>
+        </g>
+        <g font-family="system-ui, sans-serif" font-size="11" fill="var(--text-2)">
+          <text x="214" y="36">route()</text><text x="244" y="106">login()</text>
+          <text x="162" y="176">get_user()</text><text x="276" y="232">hash()</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <section id="demos">
+    <h2>Click around: real answers, recorded with the plugin</h2>
+    <div class="cards">
+      <a class="card" href="ky.html#answer=20260929-160517-how-does-retry-work">
+        <span class="kind"><span class="num">1</span> Answer path · ky</span>
+        <span class="q">How does retry work?</span>
+        <span class="d">A 7-step route through the HTTP client. The three guessed links are dashed, and the answer says so.</span>
+        <span class="meta">Medium confidence · cited file:line</span>
+      </a>
+      <a class="card" href="ky.html#answer=20260930-134603-what-happens-when-a-request-times-out">
+        <span class="kind"><span class="num">2</span> Answer path · ky</span>
+        <span class="q">What happens when a request times out?</span>
+        <span class="d">From the timeout race to the TimeoutError and the decision whether to retry.</span>
+        <span class="meta">6 steps</span>
+      </a>
+      <a class="card" href="miniauth.html#answer=20260930-134527-what-happens-when-a-user-logs-in">
+        <span class="kind"><span class="num">3</span> Answer path · miniauth</span>
+        <span class="q">What happens when a user logs in?</span>
+        <span class="d">route → handler → login → look up user → check password → token. It also notices the "signed" token isn't really signed.</span>
+        <span class="meta">High confidence</span>
+      </a>
+      <a class="card" href="miniauth.html#answer=20260930-134543-diff">
+        <span class="kind"><span class="dot" style="background:var(--chg)"></span> Change impact · miniauth</span>
+        <span class="q">verify_password now needs 8+ characters</span>
+        <span class="d">Changed code in red, callers in violet. Finding: existing users with short passwords get locked out, and nothing is tested.</span>
+        <span class="meta">Risk: High</span>
+      </a>
+      <a class="card" href="ky.html#answer=20260930-134051-diff">
+        <span class="kind"><span class="dot" style="background:var(--chg)"></span> Change impact · ky</span>
+        <span class="q">Retry limit capped at 10</span>
+        <span class="d">Ripples through 8 functions, 3 levels deep. The tests that reach it are listed.</span>
+        <span class="meta">Risk: Low</span>
+      </a>
+      <a class="card" href="ky.html">
+        <span class="kind"><span class="dot" style="background:var(--l2)"></span> Full map · ky</span>
+        <span class="q">Explore the whole codebase</span>
+        <span class="d">87 files and 271 functions and classes, arranged in bands by architectural layer, with AI summaries. Search, click, switch to the table view.</span>
+        <span class="meta">Also: <span style="text-decoration:underline">miniauth</span> (below)</span>
+      </a>
+    </div>
+    <p class="note">More maps: <a href="miniauth.html">miniauth</a> (a tiny login service) ·
+      <a href="../">the original RepoSage demo</a> (paste Python, see the call graph).</p>
+  </section>
+
+  <section>
+    <h2>What the plugin does</h2>
+    <div class="steps">
+      <div class="step"><code>/reposage:scan</code><p>Tree-sitter reads Python, JavaScript/TypeScript and Java into a knowledge graph. Deterministic and incremental.</p></div>
+      <div class="step"><code>/reposage:summarize</code><p>Plain-English summaries, layers and tags, written for a newcomer. Batched and cheap (Haiku).</p></div>
+      <div class="step"><code>/reposage:dashboard</code><p>The interactive map you see here, as one offline HTML file.</p></div>
+      <div class="step"><code>/reposage:chat</code><p>Ask a question and get an answer that cites file:line, plus an Answer Path on the map.</p></div>
+      <div class="step"><code>/reposage:diff</code><p>What your change affects, which tests cover it, and a Low / Medium / High risk.</p></div>
+    </div>
+  </section>
+
+  <section id="install">
+    <h2>Install in Claude Code</h2>
+<pre class="install"><span class="c"># add the marketplace (plugin currently on the plugin-version branch)</span>
+/plugin marketplace add mehwishafsa/Reposage#plugin-version
+/plugin install reposage@reposage
+
+<span class="c"># then, inside any repository</span>
+/reposage:scan
+/reposage:dashboard
+/reposage:chat How does authentication work?</pre>
+    <p class="note">Needs Python 3.10+. The first run sets up a private environment in <code>~/.reposage/venv</code> (about a minute).</p>
+  </section>
+
+  <footer>
+    <p>Inspired by <a href="https://github.com/Egonex-AI/Understand-Anything">Understand Anything</a>. RepoSage's code and design are its own.</p>
+    <p>RepoSage is MIT licensed. The demo code is <a href="https://github.com/sindresorhus/ky">ky</a> by Sindre Sorhus (MIT) and miniauth, RepoSage's bundled sample app.
+      Summaries and answers were written by Claude through the plugin.</p>
+  </footer>
+</div>
+</body>
+</html>
