@@ -31,7 +31,9 @@ export default function CodePage() {
   const [file, setFile] = useState<FileView | null>(null);
   const [fn, setFn] = useState<FunctionView | null>(null);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelectedRaw] = useState<string | null>(null);
+  const [userPicked, setUserPicked] = useState(false);
+  const setSelected = (b: string | null) => { setSelectedRaw(b); if (b) setUserPicked(true); };
   const [level, setLevel] = useState<Level>("normal");
   const [tab, setTab] = useState<Tab>(fnId ? "flow" : "steps");
   const [ai, setAi] = useState<Record<string, ExplainStatus>>({});
@@ -50,10 +52,10 @@ export default function CodePage() {
   }, [id, path]);
 
   useEffect(() => {
-    setSelected(null);
+    setSelectedRaw(null);
     if (!fnId) { setFn(null); return; }
     setFn(null);
-    api.func(id, fnId).then((v) => { setFn(v); setSelected(v.blocks[0]?.id ?? null); })
+    api.func(id, fnId).then((v) => { setFn(v); setSelectedRaw(v.blocks[0]?.id ?? null); })
       .catch((e) => setError(e.message));
   }, [id, fnId]);
 
@@ -82,6 +84,9 @@ export default function CodePage() {
     return fromAI ?? (level === "simpler" ? b.simpler : b.explain);
   };
   const chosen = blocks.find((b) => b.id === selected) ?? null;
+  // ?hl=22-26 (from a chat citation): highlight those lines until a block is picked
+  const hlMatch = /^(\d+)(?:-(\d+))?$/.exec(params.get("hl") ?? "");
+  const hl: [number, number] | null = hlMatch ? [+hlMatch[1], +(hlMatch[2] ?? hlMatch[1])] : null;
 
   const pickLine = (line: number) => {
     const hits = blocks.filter((b) => b.lines[0] <= line && line <= b.lines[1]);
@@ -102,6 +107,8 @@ export default function CodePage() {
         <h1 className="pixel text-[15px] sm:text-[18px] m-0">Code explainer</h1>
         <span className="muted">{overview?.project}</span>
         <span className="flex-1" />
+        <Link to={`/p/${id}/ask?file=${encodeURIComponent(path)}${fnId ? `&fn=${encodeURIComponent(fnId)}` : ""}`}
+              className="btn btn-gold !py-1.5 !px-3 text-sm no-underline">💬 Ask about {fn ? `${fn.name}()` : "this file"}</Link>
         <label className="text-sm font-semibold flex items-center gap-2">File
           <select className="field !py-1.5 !w-auto max-w-[60vw]" value={path}
                   onChange={(e) => setParams({ file: e.target.value })}>
@@ -133,7 +140,7 @@ export default function CodePage() {
             <span className="muted text-xs hidden sm:inline">Click a line to explain it</span>
           </div>
           {file ? (
-            <CodeView text={file.text} language={file.language} strong={chosen?.lines ?? null}
+            <CodeView text={file.text} language={file.language} strong={hl && !userPicked ? hl : chosen?.lines ?? null}
                       scope={chosen && chosen.scope[1] > chosen.lines[1] ? chosen.scope : null}
                       firstLine={fn?.start ?? 1} lastLine={fn?.end} onLine={pickLine} />
           ) : <p className="p-4 muted">Loading the code<span className="dots" /></p>}

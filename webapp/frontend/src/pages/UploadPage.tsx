@@ -61,9 +61,10 @@ export default function UploadPage() {
             explains it in plain English: what it does, where it starts, and how the files fit together.
           </p>
           <ul className="mt-5 space-y-2 text-[15px]">
+            <li>🤖 <b>Ask questions about your code</b> - agentic AI that shows its steps and points to the exact lines</li>
             <li>🧱 <b>A map of your files</b> and which ones talk to each other</li>
             <li>🚩 <b>Start here:</b> the best order to read the code</li>
-            <li>💬 <b>One-line summaries</b> of every file and function</li>
+            <li>🧭 <b>Flowcharts and plain-English explanations</b> of every function</li>
           </ul>
           <p className="muted text-sm mt-5">
             Works with {cfg ? cfg.languages.join(", ") : "Python, JavaScript, TypeScript, Java and C"}.

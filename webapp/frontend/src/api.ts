@@ -54,6 +54,16 @@ export type ExplainStatus =
   | { status: "done"; blocks: Record<string, string> }
   | { status: "resting" | "off" | "busy"; message: string };
 
+export interface Cite { file: string; start: number; end: number; label?: string; function_id?: string | null }
+export interface AgentStep { tool: string; title: string; detail: string; thought?: string; refs: Cite[]; function_id?: string }
+export interface ChatJob {
+  status: "working" | "done" | "error"; question: string; steps: AgentStep[];
+  mode?: "ai" | "no_ai"; reason?: string; message?: string; answer?: string; citations?: Cite[];
+  followups?: string[]; focus?: Cite | null; cached?: boolean;
+}
+export type SimplerStatus = { status: "thinking" | "missing" } |
+  { status: "done" | "off" | "resting" | "busy"; answer: string; citations: Cite[]; message?: string };
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   let resp: Response;
   try {
@@ -95,5 +105,10 @@ export const api = {
   explain: (id: string, level: "normal" | "simpler", target: { path?: string; fn?: string }) =>
     call<ExplainStatus>(`/api/projects/${id}/explain?level=${level}` +
       (target.fn ? `&id=${encodeURIComponent(target.fn)}` : `&path=${encodeURIComponent(target.path ?? "")}`)),
+  ask: (id: string, question: string, context: { file?: string; fn?: string }, history: { q: string; a: string }[]) =>
+    call<{ id: string }>(`/api/projects/${id}/chat`, json({ question, context, history })),
+  chat: (id: string, qid: string) => call<ChatJob>(`/api/projects/${id}/chat/${qid}`),
+  simpler: (id: string, qid: string) => call<SimplerStatus>(`/api/projects/${id}/chat/${qid}/simpler`, { method: "POST" }),
+  suggestions: (id: string) => call<{ questions: string[] }>(`/api/projects/${id}/chat-suggestions`),
   retryAI: (id: string) => call<{ ok: boolean }>(`/api/projects/${id}/ai/retry`, { method: "POST" }),
 };

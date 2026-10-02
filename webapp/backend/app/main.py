@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config, db
-from .services import code_view, ingest, projects
+from .services import chat_agent, code_view, ingest, projects
 from .services.llm import llm
 
 app = FastAPI(title="RepoSage", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -59,6 +59,7 @@ class _RateLimiter:
 
 
 limiter = _RateLimiter(int(os.environ.get("MAX_PROJECTS_PER_HOUR", 30)))
+chat_limiter = _RateLimiter(int(os.environ.get("MAX_QUESTIONS_PER_HOUR", 60)))
 
 
 @app.middleware("http")
@@ -247,6 +248,47 @@ def project_explain(pid: str, level: str = "normal", path: str = "", id: str = "
         return projects.explain_status(pid, level, path=path, func_id=id)
     except code_view.ViewError as e:
         raise HTTPException(404, str(e)) from None
+
+
+class ChatIn(BaseModel):
+    question: str
+    context: dict = {}
+    history: list[dict] = []
+
+
+@app.post("/api/projects/{pid}/chat")
+def chat_ask(pid: str, body: ChatIn, request: Request) -> dict:
+    """Start answering a question. Poll GET .../chat/{qid} for the live steps."""
+    _ready_or_409(pid)
+    if not body.question.strip():
+        raise HTTPException(400, "Type a question first.")
+    chat_limiter.check(_visitor(request))
+    try:
+        qid = chat_agent.ask(pid, projects.project_dir(pid), body.question, body.context, body.history)
+    except code_view.ViewError as e:
+        raise HTTPException(404, str(e)) from None
+    return {"id": qid}
+
+
+@app.get("/api/projects/{pid}/chat/{qid}")
+def chat_status(pid: str, qid: str) -> dict:
+    _project_or_404(pid)
+    j = chat_agent.job(qid)
+    if j is None:
+        raise HTTPException(404, "That question has expired. Please ask it again.")
+    return {k: v for k, v in j.items() if not k.startswith("simpler")}
+
+
+@app.post("/api/projects/{pid}/chat/{qid}/simpler")
+def chat_simpler(pid: str, qid: str) -> dict:
+    _project_or_404(pid)
+    return chat_agent.simpler(pid, qid)
+
+
+@app.get("/api/projects/{pid}/chat-suggestions")
+def chat_suggestions(pid: str) -> dict:
+    _ready_or_409(pid)
+    return {"questions": chat_agent.suggestions(projects.project_dir(pid))}
 
 
 # ---------------------------------------------------------------------------

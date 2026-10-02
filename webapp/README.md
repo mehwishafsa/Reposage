@@ -18,6 +18,11 @@ webapp/
       analyze.py        engine -> overview, "Start here", file map (no AI)
       ai_notes.py       plain-English summaries (AI, in the background)
       llm.py            one interface for Gemini / Groq / Claude / fake
+      chat_agent.py     "Ask RepoSage": agentic RAG with read-only tools and live steps
+      flowchart.py      flowcharts from the syntax tree (no AI)
+      explain.py        plain-English explanations from code patterns (no AI)
+      code_view.py      code explainer: file blocks and function views
+      explain_ai.py     AI rewrites of explanations (normal / simpler)
       projects.py       project lifecycle and background jobs
       world.py          "Play the Program" world generator (game mode, later)
     tests/              run with the fake AI, no network
@@ -53,6 +58,9 @@ Tests: `cd webapp/backend && .venv/bin/python -m unittest discover -s tests -t .
 | `GEMINI_MODEL_FAST` / `_SMART` (same for `GROQ_`, `ANTHROPIC_`) | override the models |
 | `AI_DAILY_LIMIT` | stop sending requests after this many per provider per day (default 900) |
 | `AI_MIN_INTERVAL_SECONDS` | spacing between requests to one provider (default 4.5 s) |
+| `CHAT_MAX_AI_CALLS` | most AI calls the chat agent may make for one question (default 4) |
+| `CHAT_MODEL_TIER` | `smart` (default) or `fast` model for the chat agent |
+| `MAX_QUESTIONS_PER_HOUR` | chat questions per visitor per hour (default 60) |
 
 Free-tier friendly: requests are queued one at a time, retried politely on
 "slow down" answers, counted per day, and every answer is cached in SQLite.

@@ -137,4 +137,13 @@ textarea.field { font-family: ui-monospace, Consolas, Menlo, monospace; font-siz
 .flowchart g.node:focus { outline: none; }
 .flowchart g.node:focus-visible > :is(rect, polygon, path, circle) { stroke: var(--gold-ink) !important; stroke-width: 5px !important; }
 .flowchart g.node:hover > :is(rect, polygon, path, circle) { filter: brightness(1.06); }
+
+/* A citation in a chat answer: a small clickable code "tag". */
+.cite { display: inline-flex; align-items: center; gap: 2px; margin: 0 2px; padding: 0 6px; cursor: pointer;
+        font: 600 12.5px/1.6 ui-monospace, Consolas, Menlo, monospace; color: var(--ink);
+        background: color-mix(in srgb, var(--gold) 40%, var(--surface)); border: 2px solid var(--edge);
+        box-shadow: 2px 2px 0 var(--drop); vertical-align: 1px; }
+.cite::before { content: "▸"; color: var(--gold-ink); }
+.cite:hover { background: var(--gold); }
+.cite:focus-visible { outline: 3px solid var(--gold-ink); outline-offset: 1px; }
 }

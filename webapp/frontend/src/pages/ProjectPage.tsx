@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type AIStatus, type FileInfo, type Overview, type ProjectStatus } from "../api";
 import Loading from "../components/Loading";
 import FileMap from "../components/FileMap";
-import { CubeBuddy } from "../components/Pixel";
+import { CubeBuddy, SageIcon } from "../components/Pixel";
 
 export default function ProjectPage() {
   const { id = "" } = useParams();
@@ -98,9 +98,10 @@ function Dashboard({ data, id, onRetry }: { data: Overview; id: string; onRetry:
           <span className="chip">{s.lines} lines</span>
         </div>
         <span className="flex-1" />
-        <Link to={`/p/${id}/code`} className="btn btn-go no-underline !py-2">Open the code explainer ▶</Link>
+        <Link to={`/p/${id}/code`} className="btn no-underline !py-2">Code explainer</Link>
       </div>
 
+      <AskBox id={id} />
       <AIBanner status={data.ai_status} providers={data.ai.providers} onRetry={onRetry} />
 
       <div className="grid gap-6 mt-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -267,4 +268,36 @@ function AIBanner({ status, providers, onRetry }: { status: AIStatus; providers:
 function langColor(name: string): string {
   const key = name.toLowerCase();
   return ({ python: "var(--c-py)", javascript: "var(--c-js)", typescript: "var(--c-ts)", java: "var(--c-java)", c: "var(--c-c)" } as Record<string, string>)[key] ?? "var(--stone)";
+}
+
+/** The chat, front and centre: RepoSage's main idea. */
+function AskBox({ id }: { id: string }) {
+  const nav = useNavigate();
+  const [q, setQ] = useState("");
+  const [suggest, setSuggest] = useState<string[]>([]);
+  useEffect(() => { api.suggestions(id).then((r) => setSuggest(r.questions.slice(0, 3))).catch(() => {}); }, [id]);
+  const go = (question: string) => nav(`/p/${id}/ask${question.trim() ? `?q=${encodeURIComponent(question.trim())}` : ""}`);
+  return (
+    <form className="tile p-4 sm:p-5 mt-5" style={{ background: "color-mix(in srgb, var(--grass) 12%, var(--surface))" }}
+          onSubmit={(e) => { e.preventDefault(); go(q); }} aria-label="Ask a question about this code">
+      <div className="flex items-center gap-3 mb-3">
+        <SageIcon size={36} />
+        <div>
+          <h2 className="pixel text-[12px] sm:text-[13px] m-0">Ask RepoSage about this code</h2>
+          <p className="muted m-0 text-sm">It searches, reads the right functions and shows every step it takes.</p>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <label className="sr-only" htmlFor="askbox">Your question</label>
+        <input id="askbox" className="field" value={q} onChange={(e) => setQ(e.target.value)} maxLength={500}
+               placeholder={suggest[1] ?? "How does this program work?"} />
+        <button className="btn btn-go shrink-0">Ask ▶</button>
+      </div>
+      {suggest.length > 0 && (
+        <div className="flex flex-wrap gap-2 mt-3">
+          {suggest.map((s) => <button type="button" key={s} className="btn !py-1 !px-2.5 text-sm text-left" onClick={() => go(s)}>{s}</button>)}
+        </div>
+      )}
+    </form>
+  );
 }

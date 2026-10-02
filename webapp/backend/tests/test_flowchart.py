@@ -212,7 +212,9 @@ class ExplainerApiTest(unittest.TestCase):
     def setUp(self):
         from fastapi.testclient import TestClient
         from app.main import app, limiter
+        from app import config
         from app.services.llm import llm
+        config.AI_PROVIDER, config.AI_FALLBACK = "fake", "none"
         limiter.hits.clear()
         llm.reset()
         llm.sleep = lambda s: None
@@ -263,7 +265,11 @@ class ExplainerApiTest(unittest.TestCase):
             pid = self.project("miniauth")
             fn = self.client.get(f"/api/projects/{pid}/function", params={"id": "auth.py::login"}).json()
             self.assertIn("user is None?", fn["mermaid"])
-            r = self.client.get(f"/api/projects/{pid}/explain", params={"id": "auth.py::login", "level": "simpler"}).json()
+            for _ in range(100):
+                r = self.client.get(f"/api/projects/{pid}/explain", params={"id": "auth.py::login", "level": "simpler"}).json()
+                if r["status"] != "thinking":
+                    break
+                time.sleep(0.03)
             self.assertEqual(r["status"], "off")
             self.assertIn("switched off", r["message"])
         finally:

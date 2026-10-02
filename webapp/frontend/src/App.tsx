@@ -3,6 +3,7 @@ import { Link, Route, Routes } from "react-router-dom";
 import UploadPage from "./pages/UploadPage";
 import ProjectPage from "./pages/ProjectPage";
 import CodePage from "./pages/CodePage";
+import AskPage from "./pages/AskPage";
 import { SageIcon } from "./components/Pixel";
 
 type Theme = "light" | "dark";
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/" element={<UploadPage />} />
           <Route path="/p/:id" element={<ProjectPage />} />
           <Route path="/p/:id/code" element={<CodePage />} />
+          <Route path="/p/:id/ask" element={<AskPage />} />
           <Route path="*" element={<div className="max-w-6xl mx-auto p-6">Page not found. <Link to="/">Go home</Link></div>} />
         </Routes>
       </main>
