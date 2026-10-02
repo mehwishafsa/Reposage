@@ -97,6 +97,8 @@ function Dashboard({ data, id, onRetry }: { data: Overview; id: string; onRetry:
           <span className="chip">{s.functions} functions</span>
           <span className="chip">{s.lines} lines</span>
         </div>
+        <span className="flex-1" />
+        <Link to={`/p/${id}/code`} className="btn btn-go no-underline !py-2">Open the code explainer ▶</Link>
       </div>
 
       <AIBanner status={data.ai_status} providers={data.ai.providers} onRetry={onRetry} />
@@ -109,7 +111,7 @@ function Dashboard({ data, id, onRetry }: { data: Overview; id: string; onRetry:
             <Source ai={data.overview.source === "ai"} />
           </section>
 
-          <section className="lg:hidden"><StartHere data={data} onSelect={select} /></section>
+          <section className="lg:hidden"><StartHere id={id} data={data} onSelect={select} /></section>
 
           <section className="tile p-5 sm:p-6" aria-labelledby="map">
             <h2 id="map" className="pixel text-[12px] sm:text-[13px] mt-0 mb-1">File map</h2>
@@ -121,7 +123,7 @@ function Dashboard({ data, id, onRetry }: { data: Overview; id: string; onRetry:
             <h2 id="files" className="pixel text-[12px] sm:text-[13px] mt-0 mb-3">All files</h2>
             <ul className="list-none p-0 m-0 space-y-3">
               {data.files.map((f) => (
-                <FileRow key={f.path} f={f} isStart={f.path === data.start_here.file} open={open.has(f.path)}
+                <FileRow key={f.path} id={id} f={f} isStart={f.path === data.start_here.file} open={open.has(f.path)}
                          selected={selected === f.path}
                          refCb={(el) => { rows.current[f.path] = el; }}
                          toggle={() => setOpen((o) => { const n = new Set(o); if (n.has(f.path)) n.delete(f.path); else n.add(f.path); return n; })} />
@@ -131,7 +133,7 @@ function Dashboard({ data, id, onRetry }: { data: Overview; id: string; onRetry:
         </div>
 
         <aside className="space-y-6 min-w-0">
-          <div className="hidden lg:block"><StartHere data={data} onSelect={select} /></div>
+          <div className="hidden lg:block"><StartHere id={id} data={data} onSelect={select} /></div>
           <section className="tile p-5" aria-labelledby="langs">
             <h2 id="langs" className="pixel text-[12px] mt-0 mb-3">Languages</h2>
             <div className="flex h-5 border-3 border-[var(--edge)]">
@@ -163,7 +165,7 @@ function Dashboard({ data, id, onRetry }: { data: Overview; id: string; onRetry:
   );
 }
 
-function StartHere({ data, onSelect }: { data: Overview; onSelect: (p: string) => void }) {
+function StartHere({ id, data, onSelect }: { id: string; data: Overview; onSelect: (p: string) => void }) {
   const sh = data.start_here;
   if (!sh.file) return null;
   return (
@@ -172,7 +174,8 @@ function StartHere({ data, onSelect }: { data: Overview; onSelect: (p: string) =
       {sh.function && (
         <p className="mt-0 text-[15px]">
           Open <button className="mono font-bold underline cursor-pointer bg-transparent border-0 p-0 text-[var(--link)]" onClick={() => onSelect(sh.file!)}>{sh.file}</button>{" "}
-          and find <code className="font-bold">{sh.function.name}()</code> on line {sh.function.line}. That's where the program begins.
+          and find <code className="font-bold">{sh.function.name}()</code> on line {sh.function.line}. That's where the program begins.{" "}
+          <Link to={`/p/${id}/code?file=${encodeURIComponent(sh.file!)}&fn=${encodeURIComponent(`${sh.file}::${sh.function.name}`)}`}>See its flowchart →</Link>
         </p>
       )}
       <ol className="list-none p-0 m-0 space-y-2">
@@ -191,8 +194,8 @@ function StartHere({ data, onSelect }: { data: Overview; onSelect: (p: string) =
   );
 }
 
-function FileRow({ f, isStart, open, selected, toggle, refCb }: {
-  f: FileInfo; isStart: boolean; open: boolean; selected: boolean; toggle: () => void; refCb: (el: HTMLLIElement | null) => void;
+function FileRow({ id, f, isStart, open, selected, toggle, refCb }: {
+  id: string; f: FileInfo; isStart: boolean; open: boolean; selected: boolean; toggle: () => void; refCb: (el: HTMLLIElement | null) => void;
 }) {
   return (
     <li ref={refCb} className={`tile-flat p-3 sm:p-4 ${selected ? "outline-3 outline-[var(--gold-ink)]" : ""}`}>
@@ -205,6 +208,7 @@ function FileRow({ f, isStart, open, selected, toggle, refCb }: {
       </div>
       <p className="mt-2 mb-0">{f.summary}</p>
       <Source ai={f.summary_source === "ai"} />
+      <Link to={`/p/${id}/code?file=${encodeURIComponent(f.path)}`} className="btn !py-1 !px-2 text-sm mt-2 mr-2 no-underline">Explain this file →</Link>
       {f.has_errors && <p className="text-sm text-[var(--danger)] mt-1 mb-0">This file has a syntax error; we read what we could.</p>}
       {f.functions.length > 0 && (
         <>
@@ -215,7 +219,11 @@ function FileRow({ f, isStart, open, selected, toggle, refCb }: {
             <ul className="list-none p-0 mt-2 mb-0 space-y-1">
               {f.functions.map((fn) => (
                 <li key={fn.id} className="text-[15px] pl-3 border-l-3 border-[var(--grass)]">
-                  <code className="font-bold">{fn.parent ? `${fn.parent}.` : ""}{fn.name}{fn.kind === "record" || fn.kind === "class" ? "" : "()"}</code>
+                  {fn.kind === "function" || fn.kind === "method"
+                    ? <Link to={`/p/${id}/code?file=${encodeURIComponent(f.path)}&fn=${encodeURIComponent(fn.id)}`} className="mono font-bold" title="See its steps and flowchart">
+                        {fn.parent ? `${fn.parent}.` : ""}{fn.name}()
+                      </Link>
+                    : <code className="font-bold">{fn.name}</code>}
                   <span className="muted text-sm"> · line {fn.line}{fn.end > fn.line ? `-${fn.end}` : ""}</span>
                   {fn.summary && <span className="block">{fn.summary}</span>}
                 </li>

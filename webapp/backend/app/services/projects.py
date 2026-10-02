@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
 from .. import config, db
-from . import ai_notes, analyze, ingest
+from . import ai_notes, analyze, code_view, explain_ai, ingest
 
 # Two analyses at a time is plenty for a small server; AI notes have their
 # own single-file queue inside llm.py.
@@ -122,3 +122,28 @@ def _cleanup() -> None:
 def _clean_name(name: str) -> str:
     name = "".join(ch for ch in name if ch.isprintable()).strip()
     return (name or "my-project")[:60]
+
+
+# ---- code explainer ---------------------------------------------------------
+
+def _known(pid: str) -> dict[str, str]:
+    folder = project_dir(pid)
+    data = analyze.load_json(os.path.join(folder, "overview.json")) or {"files": []}
+    return code_view.known_summaries(data, ai_notes.load_notes(folder))
+
+
+def file_view(pid: str, path: str) -> dict:
+    return code_view.file_view(project_dir(pid), path, _known(pid))
+
+
+def function_view(pid: str, func_id: str) -> dict:
+    return code_view.function_view(project_dir(pid), func_id, _known(pid))
+
+
+def explain_status(pid: str, level: str, path: str = "", func_id: str = "") -> dict:
+    view = function_view(pid, func_id) if func_id else file_view(pid, path)
+    if func_id:
+        view["source_text"] = code_view.read_source(project_dir(pid), view["path"]).decode("utf-8", "replace")
+    else:
+        view["source_text"] = view["text"]
+    return explain_ai.status(pid, view, level)

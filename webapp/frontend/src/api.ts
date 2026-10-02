@@ -36,6 +36,24 @@ export interface Overview {
   ai: { providers: string[] };
 }
 
+export interface CodeBlock {
+  id: string; kind: string; label: string; lines: [number, number]; scope: [number, number];
+  explain: string; simpler: string; function_id?: string | null;
+}
+export interface FileView {
+  kind: "file"; path: string; language: string; text: string;
+  functions: { id: string; name: string; label: string; line: number; end: number }[];
+  blocks: CodeBlock[];
+}
+export interface FunctionView {
+  kind: "function"; id: string; name: string; path: string; language: string; start: number; end: number;
+  signature: string; mermaid: string; folded: boolean; blocks: CodeBlock[];
+}
+export type ExplainStatus =
+  | { status: "thinking" }
+  | { status: "done"; blocks: Record<string, string> }
+  | { status: "resting" | "off" | "busy"; message: string };
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   let resp: Response;
   try {
@@ -72,5 +90,10 @@ export const api = {
   },
   status: (id: string) => call<ProjectStatus>(`/api/projects/${id}`),
   overview: (id: string) => call<Overview>(`/api/projects/${id}/overview`),
+  file: (id: string, path: string) => call<FileView>(`/api/projects/${id}/code?path=${encodeURIComponent(path)}`),
+  func: (id: string, fn: string) => call<FunctionView>(`/api/projects/${id}/function?id=${encodeURIComponent(fn)}`),
+  explain: (id: string, level: "normal" | "simpler", target: { path?: string; fn?: string }) =>
+    call<ExplainStatus>(`/api/projects/${id}/explain?level=${level}` +
+      (target.fn ? `&id=${encodeURIComponent(target.fn)}` : `&path=${encodeURIComponent(target.path ?? "")}`)),
   retryAI: (id: string) => call<{ ok: boolean }>(`/api/projects/${id}/ai/retry`, { method: "POST" }),
 };

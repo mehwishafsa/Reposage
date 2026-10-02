@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import config, db
-from .services import ingest, projects
+from .services import code_view, ingest, projects
 from .services.llm import llm
 
 app = FastAPI(title="RepoSage", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -210,6 +210,43 @@ def project_source(pid: str, path: str) -> dict:
     if text is None:
         raise HTTPException(404, "No such file in this project.")
     return {"path": path, "text": text}
+
+
+def _ready_or_409(pid: str) -> None:
+    if _project_or_404(pid)["status"] != "ready":
+        raise HTTPException(409, "Still reading the code, please wait.")
+
+
+@app.get("/api/projects/{pid}/code")
+def project_code(pid: str, path: str) -> dict:
+    """A whole file: its text, its functions, and top-level blocks with explanations."""
+    _ready_or_409(pid)
+    try:
+        return projects.file_view(pid, path)
+    except code_view.ViewError as e:
+        raise HTTPException(404, str(e)) from None
+
+
+@app.get("/api/projects/{pid}/function")
+def project_function(pid: str, id: str) -> dict:
+    """One function: its flowchart (Mermaid) and step-by-step explanations."""
+    _ready_or_409(pid)
+    try:
+        return projects.function_view(pid, id)
+    except code_view.ViewError as e:
+        raise HTTPException(404, str(e)) from None
+
+
+@app.get("/api/projects/{pid}/explain")
+def project_explain(pid: str, level: str = "normal", path: str = "", id: str = "") -> dict:
+    """AI explanations for a file or function; returns {"status": "thinking"} while working."""
+    _ready_or_409(pid)
+    if level not in ("normal", "simpler") or not (path or id):
+        raise HTTPException(400, "Ask for level=normal or level=simpler, and a path or a function id.")
+    try:
+        return projects.explain_status(pid, level, path=path, func_id=id)
+    except code_view.ViewError as e:
+        raise HTTPException(404, str(e)) from None
 
 
 # ---------------------------------------------------------------------------

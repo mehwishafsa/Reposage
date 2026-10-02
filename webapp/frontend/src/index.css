@@ -38,6 +38,8 @@
   --c-ts: #2f7fb8;
   --c-java: #b5523b;
   --c-c: #7a4fa0;
+  --hl-strong: color-mix(in srgb, #ffd24a 45%, transparent);
+  --hl-scope: color-mix(in srgb, #ffd24a 14%, transparent);
   color-scheme: light;
 }
 
@@ -49,6 +51,7 @@
     --grass: #5aa33c; --grass-hi: #8fd46b; --grass-lo: #2f6b1b; --gold: #ffd24a; --gold-ink: #ffe9a6;
     --sky: #23324a; --stone: #9a958b; --code-bg: #120e16; --code-ink: #f4efe6; --link: #8cc4ff; --danger: #ff8f75;
     --c-py: #6c9de0; --c-js: #f0c33c; --c-ts: #5fb0e8; --c-java: #e98466; --c-c: #b48ae0;
+    --hl-strong: rgba(255, 210, 74, 0.2); --hl-scope: rgba(255, 210, 74, 0.07);
     color-scheme: dark;
   }
 }
@@ -59,6 +62,7 @@
   --grass: #5aa33c; --grass-hi: #8fd46b; --grass-lo: #2f6b1b; --gold: #ffd24a; --gold-ink: #ffe9a6;
   --sky: #23324a; --stone: #9a958b; --code-bg: #120e16; --code-ink: #f4efe6; --link: #8cc4ff; --danger: #ff8f75;
   --c-py: #6c9de0; --c-js: #f0c33c; --c-ts: #5fb0e8; --c-java: #e98466; --c-c: #b48ae0;
+  --hl-strong: rgba(255, 210, 74, 0.2); --hl-scope: rgba(255, 210, 74, 0.07);
   color-scheme: dark;
 }
 
@@ -127,4 +131,10 @@ textarea.field { font-family: ui-monospace, Consolas, Menlo, monospace; font-siz
 
 .flash { animation: flash 1.2s ease-out; }
 @keyframes flash { from { background: color-mix(in srgb, var(--gold) 55%, var(--surface)); } }
+
+/* Flowchart: the chosen box gets a thick outline in the "you are here" colour. */
+.flowchart svg { height: auto; display: block; margin: 0 auto; }
+.flowchart g.node:focus { outline: none; }
+.flowchart g.node:focus-visible > :is(rect, polygon, path, circle) { stroke: var(--gold-ink) !important; stroke-width: 5px !important; }
+.flowchart g.node:hover > :is(rect, polygon, path, circle) { filter: brightness(1.06); }
 }
