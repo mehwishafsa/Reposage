@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play the Program</title>
+<!--
+  MOCKUP of RepoSage "Play the Program" (game mode).
+  The world layout comes from the REAL miniauth code graph via
+  webapp/backend/app/services/world.py (world-miniauth.js).
+  All art is drawn in code here: tiles, buildings, villagers, trees.
+  The journey panel / speech text is placeholder for the mockup.
+-->
+<style>
+  @font-face { font-family: "Pixel"; src: url("../frontend/public/fonts/PressStart2P.woff2") format("woff2"); }
+  :root {
+    --panel: #2b2233; --panel-2: #3a2f45; --edge: #120d17; --hi: #6b5a7d;
+    --text: #f4efe6; --muted: #cbbfd8; --gold: #ffd24a; --sky-1: #8fd3ff; --sky-2: #d9f1ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: linear-gradient(var(--sky-1), var(--sky-2)); color: var(--text);
+         font: 15px/1.45 "Nunito", "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  canvas { position: absolute; inset: 0; image-rendering: pixelated; }
+  .px { font-family: "Pixel", monospace; letter-spacing: .5px; }
+  /* chunky "block" panel: dark fill, light top-left bevel, dark bottom-right bevel */
+  .panel { position: absolute; background: var(--panel); border: 3px solid var(--edge);
+           box-shadow: inset 3px 3px 0 var(--hi), inset -3px -3px 0 #1c1522, 4px 4px 0 rgba(0,0,0,.25); }
+  .top { left: 16px; right: 16px; top: 14px; height: 58px; display: flex; align-items: center; gap: 18px; padding: 0 16px; }
+  .logo { font-size: 15px; color: var(--gold); text-shadow: 2px 2px 0 #7a4b00; }
+  .logo small { color: var(--muted); font-size: 9px; margin-left: 10px; text-shadow: none; }
+  .tabs { display: flex; gap: 8px; margin-left: 10px; }
+  .tab { font-size: 10px; padding: 9px 12px; background: var(--panel-2); border: 3px solid var(--edge);
+         box-shadow: inset 2px 2px 0 var(--hi); color: var(--muted); }
+  .tab.on { background: #5aa33c; color: #fff; box-shadow: inset 2px 2px 0 #8fd46b, inset -2px -2px 0 #2f6b1b; }
+  .spacer { flex: 1; }
+  .proj { font-size: 13px; color: var(--muted); }
+  .proj b { color: var(--text); }
+  .btn { font-size: 9px; padding: 8px 10px; background: var(--panel-2); border: 3px solid var(--edge); box-shadow: inset 2px 2px 0 var(--hi); }
+
+  .journey { left: 16px; top: 88px; width: 300px; padding: 14px 16px; }
+  .journey h3 { margin: 0 0 4px; font-size: 10px; color: var(--gold); }
+  .journey code { font: 13px ui-monospace, Consolas, monospace; color: #bfe3ff; }
+  .steps { list-style: none; padding: 0; margin: 12px 0 10px; }
+  .steps li { display: flex; gap: 10px; align-items: center; padding: 5px 0; font-size: 14px; }
+  .dot { width: 14px; height: 14px; border: 2px solid var(--edge); flex: none; }
+  .done .dot { background: #5aa33c; } .here .dot { background: var(--gold); box-shadow: 0 0 0 3px rgba(255,210,74,.35); }
+  .next .dot { background: #6d6478; } .here { color: var(--gold); font-weight: 700; }
+  .next { color: var(--muted); }
+  .steps small { color: var(--muted); font-size: 12px; }
+  .badge { display: inline-block; font-size: 12px; padding: 4px 8px; background: #1f3a2a; border: 2px solid #0d1f14; color: #b9f3c9; margin-top: 4px; }
+
+  .legend { right: 16px; top: 88px; width: 250px; padding: 12px 14px; font-size: 13px; }
+  .legend h3 { margin: 0 0 8px; font-size: 9px; color: var(--gold); }
+  .legend div { display: flex; align-items: center; gap: 9px; margin: 5px 0; }
+  .sw { width: 18px; height: 12px; border: 2px solid var(--edge); flex: none; }
+
+  .guide { left: 50%; transform: translateX(-50%); bottom: 128px; width: 640px; padding: 12px 16px 12px 78px; font-size: 15px; }
+  .guide .who { font-size: 9px; color: var(--gold); margin-bottom: 4px; }
+  .guide code { font: 13px ui-monospace, Consolas, monospace; background: #1a1420; padding: 1px 5px; color: #ffe08a; }
+  .guide canvas { position: absolute; inset: auto; left: 14px; top: 14px; }
+  .choices { display: flex; gap: 10px; margin-top: 8px; }
+  .choice { font-size: 13px; padding: 5px 10px; border: 2px solid var(--edge); background: #3d5f2d; box-shadow: inset 2px 2px 0 #74a85a; }
+  .choice.no { background: #5b3a3a; box-shadow: inset 2px 2px 0 #8a5a5a; opacity: .75; }
+
+  .hotbar { left: 50%; transform: translateX(-50%); bottom: 16px; display: flex; gap: 6px; padding: 8px; align-items: flex-end; }
+  .hotbar .lbl { position: absolute; top: -24px; left: 0; font-size: 9px; color: #2b2233; text-shadow: 1px 1px 0 #fff8; white-space: nowrap; }
+  .slot { width: 132px; height: 58px; background: #4a3f55; border: 3px solid var(--edge);
+          box-shadow: inset 3px 3px 0 #1f1826, inset -2px -2px 0 #6d5f7d; padding: 6px 8px; overflow: hidden; }
+  .slot .k { font: 11px ui-monospace, Consolas, monospace; color: var(--muted); }
+  .slot .v { font: 700 13px ui-monospace, Consolas, monospace; color: #fff; white-space: nowrap; }
+  .slot.new { box-shadow: inset 3px 3px 0 #1f1826, 0 0 0 3px var(--gold); }
+  .slot.empty .v { color: #8a7f96; font-weight: 400; }
+
+  .bubble { position: absolute; width: 270px; background: #fffaf0; color: #2b2233; border: 3px solid var(--edge);
+            box-shadow: 4px 4px 0 rgba(0,0,0,.25); padding: 10px 12px; font-size: 14px; }
+  .bubble b { font-family: "Pixel", monospace; font-size: 9px; color: #9a3b26; display: block; margin-bottom: 5px; }
+  .bubble::after { content: ""; position: absolute; left: -17px; bottom: 10px; width: 14px; height: 14px;
+                   background: #fffaf0; border-left: 3px solid var(--edge); border-bottom: 3px solid var(--edge); transform: skewY(-40deg); }
+  .bubble .ask { margin-top: 7px; font-size: 12px; color: #6a5c78; }
+  .foot { position: absolute; left: 18px; bottom: 14px; font-size: 12px; color: #2b2233; background: #fffc; padding: 4px 8px; border: 2px solid #2b223355; }
+</style>
+</head>
+<body>
+<canvas id="world"></canvas>
+
+<div class="panel top">
+  <div class="logo px">RepoSage<small>Play the Program</small></div>
+  <div class="tabs px">
+    <div class="tab">Explore</div><div class="tab on">Journey</div><div class="tab">Talk</div><div class="tab">Ripple</div>
+  </div>
+  <div class="spacer"></div>
+  <div class="proj">World: <b>miniauth</b> · <span id="stats"></span></div>
+  <div class="btn px">Light/Dark</div>
+</div>
+
+<div class="panel journey">
+  <h3 class="px">Journey</h3>
+  <code>route("/login", {username: "mehwish", password: "secret"})</code>
+  <ul class="steps">
+    <li class="done"><span class="dot"></span>route <small>chose /login</small></li>
+    <li class="done"><span class="dot"></span>handle_login_request</li>
+    <li class="here"><span class="dot"></span>login <small>you are here</small></li>
+    <li class="done" style="padding-left:22px"><span class="dot"></span>get_user <small>gave back a user</small></li>
+    <li class="next" style="padding-left:22px"><span class="dot"></span>verify_password</li>
+    <li class="next" style="padding-left:22px"><span class="dot"></span>generate_token</li>
+  </ul>
+  <span class="badge">Trace: run in your browser (Pyodide) · Python</span>
+</div>
+
+<div class="panel legend">
+  <h3 class="px">Map key</h3>
+  <div><span class="sw" style="background:#6fbf4a"></span>Region = folder</div>
+  <div><span class="sw" style="background:#d9c08e"></span>Village = file</div>
+  <div><span class="sw" style="background:#c8955a"></span>Building = function</div>
+  <div>Taller building = more lines of code</div>
+  <div><span class="sw" style="background:#9a958b"></span>Road = one function calls another</div>
+  <div><span class="sw" style="background:#b8ab95"></span>Main road = file imports file</div>
+  <div><span class="sw" style="background:#ffd24a"></span>Your journey so far</div>
+</div>
+
+<div class="bubble" id="bubble">
+  <b>login</b>
+  Hi, I'm <i>login</i>! Give me a username and a password. I ask <i>get_user</i> for the record,
+  let <i>verify_password</i> check it, and if it matches, <i>generate_token</i> makes you a pass.
+  <div class="ask">Ask me anything ›</div>
+</div>
+
+<div class="panel guide">
+  <canvas id="guideface" width="48" height="48"></canvas>
+  <div class="who px">Guide</div>
+  Fork in the road! <code>if user is None</code>: get_user found <b>mehwish</b>, so the user is <b>not</b> None.
+  We skip the "no such user" road and walk on to <b>verify_password</b>.
+  <div class="choices"><span class="choice">✔ user found → verify_password</span><span class="choice no">✘ None → return error</span></div>
+</div>
+
+<div class="panel hotbar">
+  <span class="lbl px">Inventory: variables inside login</span>
+  <div class="slot"><div class="k">username</div><div class="v">"mehwish"</div></div>
+  <div class="slot"><div class="k">raw_password</div><div class="v">"secret"</div></div>
+  <div class="slot new"><div class="k">user ★ new</div><div class="v">{role: "admin", …}</div></div>
+  <div class="slot empty"><div class="k">token</div><div class="v">not yet</div></div>
+</div>
+
+<div class="foot">Mockup · layout from the real miniauth graph<br>original art, drawn in code</div>
+
+<script src="world-miniauth.js"></script>
+<script>
+"use strict";
+const W = window.WORLD;
+const TW = 40, TH = 20, BH = 16;            // tile width/height, block height (pixels)
+const cv = document.getElementById("world"), ctx = cv.getContext("2d");
+cv.width = innerWidth; cv.height = innerHeight;
+ctx.imageSmoothingEnabled = false;
+
+// centre the world in the space left between the side panels
+const OX = cv.width / 2 + (W.depth - W.width) * TW / 4 + 70;
+const OY = 175;
+const iso = (x, y, z = 0) => [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2 - z * BH];
+
+// small deterministic hash -> 0..1 (so pixel "noise" never changes)
+function h01(a, b, c = 0) {
+  let n = (a * 374761393 + b * 668265263 + c * 2147483647) | 0;
+  n = (n ^ (n >>> 13)) * 1274126177; n ^= n >>> 16;
+  return ((n >>> 0) % 1000) / 1000;
+}
+const shade = (hex, f) => {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = s => Math.max(0, Math.min(255, Math.round(((n >> s) & 255) * f)));
+  return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+};
+function poly(pts, fill, stroke) {
+  ctx.beginPath(); ctx.moveTo(...pts[0]);
+  for (const p of pts.slice(1)) ctx.lineTo(...p);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+}
+
+// ---------- classify every ground tile ----------
+const key = (x, y) => x + "," + y;
+const ground = new Map();
+const inRect = (r, x, y) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.d;
+for (const r of W.regions) for (let y = r.y; y < r.y + r.d; y++) for (let x = r.x; x < r.x + r.w; x++) ground.set(key(x, y), "region");
+for (const v of W.villages) for (let y = v.y; y < v.y + v.d; y++) for (let x = v.x; x < v.x + v.w; x++) ground.set(key(x, y), "plaza");
+for (const r of W.roads.filter(r => r.kind === "import")) for (const [x, y] of r.cells) ground.set(key(x, y), "main");
+for (const r of W.roads.filter(r => r.kind === "call")) for (const [x, y] of r.cells) ground.set(key(x, y), r.guessed ? "dirt" : "road");
+
+// the journey so far: route -> handle_login_request -> login -> get_user, and the next leg to verify_password
+const JOURNEY = [["main.py::route", "main.py::handle_login_request"], ["main.py::handle_login_request", "auth.py::login"],
+                 ["auth.py::login", "db.py::get_user"]];
+const NEXT = [["auth.py::login", "auth.py::verify_password"]];
+const pathTiles = (legs) => {
+  const s = new Set();
+  for (const [a, b] of legs) {
+    const r = W.roads.find(r => r.from === "miniauth/" + a && r.to === "miniauth/" + b);
+    if (r) r.cells.forEach(([x, y]) => s.add(key(x, y)));
+  }
+  return s;
+};
+const walked = pathTiles(JOURNEY), ahead = pathTiles(NEXT);
+
+const GROUND = {
+  wild:   { top: "#5f9e3c", speck: ["#6fb046", "#548f35", "#7cbf52"] },
+  region: { top: "#6fbf4a", speck: ["#7fcf59", "#62ad40", "#8fd66a"] },
+  plaza:  { top: "#d9c08e", speck: ["#cdb07a", "#e6cfa0", "#c4a56f"] },
+  main:   { top: "#b8ab95", speck: ["#a89b84", "#c9bda8", "#9c8f79"] },
+  road:   { top: "#9a958b", speck: ["#86817a", "#aea99f", "#7a766e"] },
+  dirt:   { top: "#b48a5a", speck: ["#a57c4e", "#c49a68"] },
+};
+
+function drawTile(x, y) {
+  const kind = ground.get(key(x, y)) || "wild";
+  const g = GROUND[kind];
+  const pts = [iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)];
+  poly(pts, g.top);
+  // pixel specks, clipped to the diamond
+  ctx.save(); ctx.beginPath(); ctx.moveTo(...pts[0]); pts.slice(1).forEach(p => ctx.lineTo(...p)); ctx.closePath(); ctx.clip();
+  const [cx, cy] = iso(x + .5, y + .5);
+  const n = kind === "road" || kind === "main" ? 9 : 6;
+  for (let i = 0; i < n; i++) {
+    const px = cx + (h01(x, y, i) - .5) * TW * .8, py = cy + (h01(y, x, i + 9) - .5) * TH * .8;
+    ctx.fillStyle = g.speck[i % g.speck.length];
+    if (kind === "road" || kind === "main") ctx.fillRect(Math.round(px) - 3, Math.round(py) - 2, 6, 3); // cobbles
+    else ctx.fillRect(Math.round(px), Math.round(py), 3, 2);
+  }
+  ctx.restore();
+  poly(pts, null, "rgba(0,0,0,.07)");
+  // journey glow
+  const k = key(x, y);
+  if (walked.has(k)) { poly(pts, "rgba(255,210,74,.62)"); poly(pts, null, "rgba(160,110,0,.5)"); }
+  else if (ahead.has(k)) {
+    const [mx, my] = iso(x + .5, y + .5);
+    ctx.fillStyle = "rgba(255,230,140,.95)"; ctx.fillRect(mx - 3, my - 2, 6, 4);
+  }
+}
+
+// world edge: the land is a floating slab with dirt and stone layers
+function drawEdges() {
+  const layers = [["#7a5230", "#5e3d22"], ["#6d6760", "#57524c"]];
+  for (let x = 0; x < W.width; x++) {
+    const y = W.depth;
+    layers.forEach(([c], i) => poly([iso(x, y, -i), iso(x + 1, y, -i), iso(x + 1, y, -i - 1), iso(x, y, -i - 1)], shade(c, 1.0 - .04 * (x % 2)), "rgba(0,0,0,.15)"));
+  }
+  for (let y = 0; y < W.depth; y++) {
+    const x = W.width;
+    layers.forEach(([, c], i) => poly([iso(x, y, -i), iso(x, y + 1, -i), iso(x, y + 1, -i - 1), iso(x, y, -i - 1)], shade(c, 1.0 - .04 * (y % 2)), "rgba(0,0,0,.15)"));
+  }
+}
+
+// ---------- buildings ----------
+const VILLAGE_COLORS = { "miniauth/auth.py": "#b5523b", "miniauth/db.py": "#3f6fa8", "miniauth/main.py": "#7a4fa0" };
+const WALL = "#c8955a";
+
+function faceQuad(face, b, u0, u1, z0, z1) {
+  // face "front" = the y+d side (lower-left on screen), "side" = the x+w side (lower-right)
+  const P = face === "front" ? (u, z) => iso(b.x + u, b.y + b.d, z) : (u, z) => iso(b.x + b.w, b.y + u, z);
+  return [P(u0, z0), P(u1, z0), P(u1, z1), P(u0, z1)];
+}
+
+function drawBuilding(b) {
+  const top = b.h, len = { front: b.w, side: b.d };
+  // walls: planks, one board per block; front face lit, side face in shadow
+  for (const face of ["front", "side"]) {
+    const light = face === "front" ? 1.0 : .78;
+    for (let z = 0; z < top; z++) {
+      poly(faceQuad(face, b, 0, len[face], z, z + 1), shade(WALL, light * (z % 2 ? .95 : 1)), "rgba(60,35,15,.35)");
+      // plank seams
+      for (let u = .5; u < len[face]; u += .5) {
+        const [p, q] = [faceQuad(face, b, u, u, z, z + 1)[0], faceQuad(face, b, u, u, z, z + 1)[3]];
+        if (h01(b.x * 7 + z, u * 10, face.length) > .45) { ctx.strokeStyle = "rgba(90,55,25,.35)"; ctx.beginPath(); ctx.moveTo(...p); ctx.lineTo(...q); ctx.stroke(); }
+      }
+      // windows (lit, since the function is "open for business")
+      if (z > 0 || top === 1) for (let u = .3; u + .4 <= len[face]; u += 1) {
+        if (face === "front" && z === 0) continue;
+        poly(faceQuad(face, b, u, u + .4, z + .3, z + .75), "#3b2a1a");
+        poly(faceQuad(face, b, u + .05, u + .35, z + .35, z + .7), face === "front" ? "#ffe39a" : "#e8c56e");
+      }
+    }
+    // corner posts
+    poly(faceQuad(face, b, 0, .12, 0, top), shade("#7b5230", light));
+  }
+  // door in the middle of the front face
+  poly(faceQuad("front", b, b.w / 2 - .28, b.w / 2 + .28, 0, .8), "#4a2e17");
+  poly(faceQuad("front", b, b.w / 2 - .2, b.w / 2 + .2, 0, .72), "#6b4424");
+  // stepped roof in the village colour (flat pixel steps instead of a smooth pyramid)
+  const rc = VILLAGE_COLORS[b.file] || "#8a5a44";
+  const steps = 3;
+  for (let s = 0; s < steps; s++) {
+    const inset = s * (Math.min(b.w, b.d) / 2) / steps, z0 = top + s * .45, z1 = z0 + .45;
+    const r = { x: b.x + inset - (s ? 0 : .12), y: b.y + inset - (s ? 0 : .12), w: b.w - 2 * inset + (s ? 0 : .24), d: b.d - 2 * inset + (s ? 0 : .24) };
+    poly([iso(r.x, r.y + r.d, z0), iso(r.x + r.w, r.y + r.d, z0), iso(r.x + r.w, r.y + r.d, z1), iso(r.x, r.y + r.d, z1)], shade(rc, 1.0));
+    poly([iso(r.x + r.w, r.y, z0), iso(r.x + r.w, r.y + r.d, z0), iso(r.x + r.w, r.y + r.d, z1), iso(r.x + r.w, r.y, z1)], shade(rc, .72));
+    poly([iso(r.x, r.y, z1), iso(r.x + r.w, r.y, z1), iso(r.x + r.w, r.y + r.d, z1), iso(r.x, r.y + r.d, z1)], shade(rc, 1.18), "rgba(0,0,0,.2)");
+  }
+  // chimney-flag showing it's a function: tiny pennant in village colour
+  const [fx, fy] = iso(b.x + b.w * .5, b.y + b.d * .5, top + steps * .45);
+  ctx.fillStyle = "#3b2a1a"; ctx.fillRect(fx - 1, fy - 18, 2, 18);
+  ctx.fillStyle = rc; ctx.fillRect(fx + 1, fy - 18, 9, 6);
+}
+
+// name tag above each building
+function tag(text, x, y, z, bg = "rgba(28,21,34,.85)") {
+  const [sx, sy] = iso(x, y, z);
+  ctx.font = "700 13px ui-monospace, Consolas, monospace";
+  const w = ctx.measureText(text).width + 12;
+  ctx.fillStyle = bg; ctx.fillRect(Math.round(sx - w / 2), Math.round(sy - 22), w, 19);
+  ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(text, sx, sy - 12);
+}
+
+// ---------- characters (original: box body, square head, dot eyes, cap) ----------
+function villager(x, y, tunic, opts = {}) {
+  const [sx, sy] = iso(x, y);
+  const X = Math.round(sx), Y = Math.round(sy);
+  ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.fillRect(X - 7, Y - 2, 14, 4);                 // shadow
+  ctx.fillStyle = "#3a3346"; ctx.fillRect(X - 5, Y - 8, 4, 7); ctx.fillRect(X + 1, Y - 8, 4, 7); // legs
+  ctx.fillStyle = tunic; ctx.fillRect(X - 7, Y - 21, 14, 14);                           // tunic
+  ctx.fillStyle = shade(tunic, .75); ctx.fillRect(X - 7, Y - 11, 14, 3);                 // belt
+  ctx.fillStyle = "#f0c9a0"; ctx.fillRect(X - 6, Y - 33, 12, 12);                        // head
+  ctx.fillStyle = "#2b2233"; ctx.fillRect(X - 3, Y - 28, 2, 3); ctx.fillRect(X + 2, Y - 28, 2, 3); // eyes
+  ctx.fillStyle = "#e89a8a"; ctx.fillRect(X - 5, Y - 24, 2, 1); ctx.fillRect(X + 4, Y - 24, 2, 1); // cheeks
+  ctx.fillStyle = shade(tunic, 1.25); ctx.fillRect(X - 7, Y - 36, 14, 4); ctx.fillRect(X - 3, Y - 39, 6, 3); // cap
+  if (opts.wave) { ctx.fillStyle = "#f0c9a0"; ctx.fillRect(X + 8, Y - 30, 4, 4); ctx.fillStyle = tunic; ctx.fillRect(X + 7, Y - 26, 4, 8); }
+}
+
+// the player: YOU are a little parcel of data walking the roads
+function dataHero(x, y) {
+  const [sx, sy] = iso(x, y);
+  const X = Math.round(sx), Y = Math.round(sy) - 4;
+  ctx.fillStyle = "rgba(255,210,74,.35)"; ctx.beginPath(); ctx.ellipse(X, Y + 3, 20, 9, 0, 0, Math.PI * 2); ctx.fill();
+  const b = { s: 11, h: 22 };
+  poly([[X, Y - b.h - 6], [X + b.s, Y - b.h], [X, Y - b.h + 6], [X - b.s, Y - b.h]], "#7fe3ff");     // top
+  poly([[X - b.s, Y - b.h], [X, Y - b.h + 6], [X, Y + 6], [X - b.s, Y]], "#39b6e0");                // left
+  poly([[X + b.s, Y - b.h], [X, Y - b.h + 6], [X, Y + 6], [X + b.s, Y]], "#1f8ab3");                // right
+  ctx.fillStyle = "#12324a"; ctx.fillRect(X - 7, Y - 12, 2, 4); ctx.fillRect(X - 3, Y - 10, 2, 4);  // eyes
+  ctx.fillStyle = "#ffd24a"; ctx.fillRect(X + 3, Y - 14, 5, 8); ctx.fillStyle = "#b07b00"; ctx.fillRect(X + 5, Y - 14, 1, 8); // satchel
+  for (let i = 0; i < 5; i++) {                                                                    // sparkles
+    ctx.fillStyle = i % 2 ? "#fff6c4" : "#ffd24a";
+    ctx.fillRect(X - 26 + i * 11, Y - 34 - (i % 3) * 5, 3, 3);
+  }
+}
+
+// trees: stacked shrinking cubes (pines) - blocky but our own shape
+function tree(x, y, v) {
+  const [bx, by] = [x + .5, y + .5];
+  const trunk = (z0, z1, s) => {
+    poly([iso(bx - s, by + s, z0), iso(bx + s, by + s, z0), iso(bx + s, by + s, z1), iso(bx - s, by + s, z1)], "#7b5230");
+    poly([iso(bx + s, by - s, z0), iso(bx + s, by + s, z0), iso(bx + s, by + s, z1), iso(bx + s, by - s, z1)], "#5e3d22");
+  };
+  const cube = (s, z0, z1, c) => {
+    poly([iso(bx - s, by + s, z0), iso(bx + s, by + s, z0), iso(bx + s, by + s, z1), iso(bx - s, by + s, z1)], shade(c, .9));
+    poly([iso(bx + s, by - s, z0), iso(bx + s, by + s, z0), iso(bx + s, by + s, z1), iso(bx + s, by - s, z1)], shade(c, .7));
+    poly([iso(bx - s, by - s, z1), iso(bx + s, by - s, z1), iso(bx + s, by + s, z1), iso(bx - s, by + s, z1)], shade(c, 1.1));
+  };
+  const green = ["#2f7d3a", "#3c8f3f", "#2a6e45"][v];
+  trunk(0, .8, .1);
+  cube(.42, .8, 1.5, green); cube(.3, 1.5, 2.1, green); cube(.16, 2.1, 2.6, green);
+}
+function flower(x, y, v) {
+  const [sx, sy] = iso(x + h01(x, y, 3) * .6 + .2, y + h01(y, x, 4) * .6 + .2);
+  const c = ["#ff7eb6", "#ffe066", "#b69cff"][v];
+  ctx.fillStyle = "#3f7a2a"; ctx.fillRect(sx, sy - 5, 2, 5);
+  ctx.fillStyle = c; ctx.fillRect(sx - 2, sy - 8, 6, 4);
+  ctx.fillStyle = "#fff5"; ctx.fillRect(sx, sy - 7, 2, 2);
+}
+
+// wooden sign post at each village gate
+function sign(x, y, text) {
+  const [sx, sy] = iso(x + .5, y + .5);
+  ctx.font = "9px Pixel, monospace";
+  const w = ctx.measureText(text).width + 16;
+  ctx.fillStyle = "#5e3d22"; ctx.fillRect(sx - 2, sy - 30, 4, 30);
+  ctx.fillStyle = "#3b2a1a"; ctx.fillRect(sx - w / 2 - 2, sy - 50, w + 4, 24);
+  ctx.fillStyle = "#b98a55"; ctx.fillRect(sx - w / 2, sy - 48, w, 20);
+  ctx.fillStyle = "#a47646"; ctx.fillRect(sx - w / 2, sy - 38, w, 1);
+  ctx.fillStyle = "#2b1a0e"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(text, sx, sy - 37);
+}
+
+function banner(r) {
+  const [sx, sy] = iso(r.x + 1, r.y + 1, 0);
+  ctx.font = "12px Pixel, monospace";
+  const w = ctx.measureText(r.name).width + 24;
+  ctx.fillStyle = "#3b2a1a"; ctx.fillRect(sx - 2, sy - 86, 4, 70);
+  ctx.fillStyle = "#1c1522"; ctx.fillRect(sx + 2, sy - 88, w + 4, 30);
+  ctx.fillStyle = "#6fbf4a"; ctx.fillRect(sx + 4, sy - 86, w, 26);
+  ctx.fillStyle = "#1c1522"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(r.name, sx + 16, sy - 72);
+}
+
+function draw() {
+  // ground, back to front
+  for (let s = 0; s < W.width + W.depth; s++)
+    for (let x = 0; x < W.width; x++) { const y = s - x; if (y >= 0 && y < W.depth) drawTile(x, y); }
+  drawEdges();
+
+  // everything that stands up, sorted so nearer things are drawn later
+  const items = [];
+  for (const b of W.buildings) items.push({ d: b.x + b.w + b.y + b.d - 1, f: () => drawBuilding(b) });
+  for (const t of W.decor) items.push({ d: t.x + t.y + 1, f: () => (t.kind === "tree" ? tree : flower)(t.x, t.y, t.v) });
+  for (const b of W.buildings) {
+    const [dx, dy] = b.door;
+    const talking = b.id === "miniauth/auth.py::login";
+    items.push({ d: dx + dy + 1.1, f: () => villager(dx + .75, dy + .5, VILLAGE_COLORS[b.file], { wave: talking }) });
+  }
+  for (const v of W.villages) items.push({ d: v.gate[0] + v.gate[1] + 1, f: () => sign(v.gate[0], v.gate[1], v.name) });
+  // the hero stands on the road just outside get_user, heading back to login
+  const leg = W.roads.find(r => r.from.endsWith("auth.py::login") && r.to.endsWith("db.py::get_user"));
+  const [hx, hy] = leg.cells[Math.floor(leg.cells.length * .45)];
+  items.push({ d: hx + hy + 1.2, f: () => dataHero(hx + .5, hy + .5) });
+  items.sort((a, b) => a.d - b.d).forEach(i => i.f());
+
+  for (const r of W.regions) banner(r);
+  for (const b of W.buildings) tag(b.name + "()", b.x + b.w / 2, b.y + b.d / 2, b.h + 1.9,
+                                   b.id.endsWith("::login") ? "rgba(154,59,38,.92)" : undefined);
+
+  // speech bubble above the login villager
+  const login = W.buildings.find(b => b.id.endsWith("::login"));
+  const [bx, by] = iso(login.door[0] + .75, login.door[1] + .5);
+  const el = document.getElementById("bubble");
+  el.style.left = (bx + 50) + "px"; el.style.top = (by - 40 - el.offsetHeight) + "px";
+  // clamp: keep the bubble clear of the side panels
+  const L = el.getBoundingClientRect();
+  if (L.left < 330) el.style.left = "330px";
+
+  document.getElementById("stats").textContent =
+    `${W.regions.length} region · ${W.villages.length} villages · ${W.buildings.length} buildings · ${W.roads.length} roads`;
+}
+
+// guide portrait: a little lantern-bot
+function guideFace() {
+  const g = document.getElementById("guideface").getContext("2d");
+  const px = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x * 4, y * 4, w * 4, h * 4); };
+  px(0, 0, 12, 12, "#1c1522"); px(1, 1, 10, 10, "#f2a93b"); px(2, 2, 8, 6, "#ffe08a");
+  px(3, 4, 2, 2, "#2b2233"); px(7, 4, 2, 2, "#2b2233"); px(4, 7, 4, 1, "#b0602a");
+  px(5, 0, 2, 1, "#6b5a7d"); px(1, 9, 10, 2, "#c7772a");
+}
+
+document.fonts.load("12px Pixel").then(() => { draw(); guideFace(); });
+</script>
+</body>
+</html>
