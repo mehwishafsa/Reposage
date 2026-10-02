@@ -330,6 +330,8 @@ class _Resolver:
             for target, _ in self.bindings(path)["*"]:
                 if target and name in self.top_level.get(target, {}):
                     return self.top_level[target][name], "high"
+            if f.language == "c":
+                return self._resolve_c(path, name, call.caller)
             # Python and JS/TS: a bare name can only reach another file
             # through an import, so there's nothing more to try. In Java,
             # classes of the same package are visible without imports.
@@ -368,6 +370,26 @@ class _Resolver:
         if len(candidates) == 1:
             return candidates[0], "medium"
         return None
+
+    def _resolve_c(self, path: str, name: str, caller: str) -> Optional[tuple[str, str]]:
+        """C: a header (ops.h) only promises functions; the bodies live in
+        the matching .c file (ops.c). So `#include "ops.h"` + `add()` links
+        to add() in ops.c. Functions of other C files are linked only when
+        exactly one has that name (they meet at link time, not via imports)."""
+        for target, _ in self.bindings(path)["*"]:
+            if target and target.endswith(".h"):
+                stem = target[:-2]
+                partner = stem + ".c"
+                if partner not in self.known_files:
+                    base = stem.rsplit("/", 1)[-1] + ".c"
+                    found = sorted(p for p in self.known_files if p.rsplit("/", 1)[-1] == base)
+                    partner = found[0] if len(found) == 1 else None
+                hit = self.top_level.get(partner, {}).get(name) if partner else None
+                if hit:
+                    return hit, "high"
+        candidates = [c for c in self.by_name.get(name, [])
+                      if c != caller and self.facts[c.split("::", 1)[0]].language == "c"]
+        return (candidates[0], "medium") if len(candidates) == 1 else None
 
     def _in_file(self, target_file: str, name: str, local: str) -> Optional[str]:
         """Find `name` at top level of `target_file`. JS default imports

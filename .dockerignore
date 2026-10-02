@@ -1,0 +1,10 @@
+.git
+**/__pycache__
+**/node_modules
+**/.venv
+**/.reposage
+webapp/frontend/dist
+webapp/backend/data
+docs
+tests
+sample_repo
