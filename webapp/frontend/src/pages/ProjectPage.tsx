@@ -253,14 +253,16 @@ function AIBanner({ status, providers, onRetry }: { status: AIStatus; providers:
     thinking: "RepoSage is thinking, please wait. Plain-English notes will appear here in a moment.",
     resting: "The free AI service has reached today's limit. Everything else works - the summaries below come from the code's own comments. Try the AI notes again tomorrow.",
     busy: "The free AI service is busy right now, so the summaries below come from the code's own comments.",
-    off: "AI notes are switched off on this server. The summaries below come from the code's own comments.",
+    off: "AI isn't set up on this server. The summaries below come from the code's own comments.",
+    setup: "The AI service isn't set up correctly on this server right now, so the summaries below come from the code's own comments.",
+    error: "The AI's notes couldn't be used this time, so the summaries below come from the code's own comments.",
   };
   const working = status === "waiting" || status === "thinking";
   return (
     <div className="notice mt-4 flex items-center gap-3" role="status">
       {working && <span className="hop inline-block shrink-0"><CubeBuddy size={28} /></span>}
       <span className="flex-1">{msg[status]}{working && <span className="dots" />}</span>
-      {(status === "busy" || status === "resting") && <button className="btn !py-1 !px-3 text-sm" onClick={onRetry}>Try again</button>}
+      {(status === "busy" || status === "resting" || status === "error") && <button className="btn !py-1 !px-3 text-sm" onClick={onRetry}>Try again</button>}
     </div>
   );
 }

@@ -61,6 +61,25 @@ Tests: `cd webapp/backend && .venv/bin/python -m unittest discover -s tests -t .
 | `CHAT_MAX_AI_CALLS` | most AI calls the chat agent may make for one question (default 4) |
 | `CHAT_MODEL_TIER` | `smart` (default) or `fast` model for the chat agent |
 | `MAX_QUESTIONS_PER_HOUR` | chat questions per visitor per hour (default 60) |
+| `GEMINI_ENDPOINT` | `auto` (default), `aistudio` or `vertex`; see "Gemini keys" below |
+| `LOG_LEVEL` | `INFO` (default) logs one line per AI request and the reason when one fails |
+
+### Gemini keys and checking the AI
+
+Google issues two kinds of keys, and each only works with its own endpoint:
+
+- `AIza...`: a Google AI Studio key, used with `generativelanguage.googleapis.com`.
+- `AQ....`: a Vertex AI express-mode key, used with `aiplatform.googleapis.com`.
+
+RepoSage tries the endpoint that fits the key first, falls back to the other one,
+and remembers which one works. If a model has been retired, it asks Google
+which models the key can use and switches to the closest one (shown in the log).
+
+To check the setup, open `/api/ai/check` on the running server. It sends one
+tiny request and reports the provider, model, endpoint, the key's type and
+length (never the key itself) and, if it failed, the reason: `auth` (bad key or
+wrong endpoint), `model`, `region`, `rate_limit`, `daily_limit` or `bad_request`.
+The same reasons appear in the server log as `AI request failed: ... reason=...`.
 
 Free-tier friendly: requests are queued one at a time, retried politely on
 "slow down" answers, counted per day, and every answer is cached in SQLite.

@@ -10,7 +10,7 @@ interface Turn { q: string; qid: string; job: ChatJob | null; simpler?: SimplerS
 
 const STEP_ICON: Record<string, string> = {
   search_code: "🔍", read_function: "📖", read_file: "📖", find_callers: "📞", find_callees: "📞",
-  get_flowchart: "🧭", project_overview: "🗺️", answer: "✍️", unknown: "❔",
+  get_flowchart: "🧭", project_overview: "🗺️", glossary: "📘", find_construct: "🧩", answer: "✍️", unknown: "❔",
 };
 
 function storageKey(id: string) { return `chat:${id}`; }

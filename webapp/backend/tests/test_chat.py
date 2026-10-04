@@ -131,7 +131,8 @@ class ChatTest(unittest.TestCase):
         self.assertIn("The loop at [main.c:45]", job["answer"])
         self.assertIn("`choice` is not equal to `0`", job["answer"])
         self.assertEqual([s["tool"] for s in job["steps"]],
-                         ["search_code", "read_function", "find_callers", "get_flowchart"])
+                         ["find_construct", "search_code", "read_function", "find_callers", "get_flowchart"])
+        self.assertEqual(job["steps"][0]["detail"], "Found 1 while loop: main()")
 
     def test_general_question_uses_overview(self):
         config.AI_PROVIDER = "gemini"
@@ -158,6 +159,39 @@ class ChatTest(unittest.TestCase):
         self.assertEqual(res["status"], "done")
         self.assertIn("recipe card", res["answer"])
         self.assertIn("[calc.c:", res["answer"])
+
+    def test_for_loop_concept_question(self):
+        """'for' is a stop word for the search, so it used to find main()'s while loop."""
+        config.AI_PROVIDER = "gemini"
+        llm.reset()
+        job = ask(self.calc, "what is for loop used for?")
+        self.assertEqual([s["tool"] for s in job["steps"]], ["glossary", "find_construct", "read_function"])
+        self.assertTrue(job["answer"].startswith("A for loop repeats some steps"))
+        self.assertIn("In your code: `power()` uses one [calc.c:33-35].", job["answer"])
+        self.assertIn("It starts with `i = 0`", job["answer"])           # the loop box, not `i = 0`'s
+        self.assertEqual(job["focus"]["function_id"], "calc.c::power")
+        simpler = client.post(f"/api/projects/{self.calc}/chat/{job['id']}/simpler").json()
+        self.assertIn("do this 10 times", simpler["answer"])
+
+    def test_concept_with_ai_gets_the_concept_instruction(self):
+        seen = []
+        old = FakeProvider.handlers["chat_agent"]
+        FakeProvider.handlers["chat_agent"] = lambda s, p: (seen.append(p), old(s, p))[1]
+        try:
+            job = ask(self.calc, "Why use a switch statement?")
+        finally:
+            FakeProvider.handlers["chat_agent"] = old
+        self.assertEqual(job["steps"][1]["detail"], "Found 1 switch: run_choice()")
+        self.assertIn("first explain the idea", seen[0])
+        self.assertIn("glossary(switch statement):", seen[0])
+
+    def test_specific_code_question_is_not_a_concept(self):
+        config.AI_PROVIDER = "gemini"
+        llm.reset()
+        job = ask(self.calc, "What does the for loop in power do?")
+        self.assertNotEqual(job["steps"][0]["tool"], "glossary")
+        self.assertEqual(job["steps"][0]["detail"], "Found 1 for loop: power()")
+        self.assertIn("The loop at [calc.c:33]", job["answer"])
 
     def test_suggestions_and_limits(self):
         qs = client.get(f"/api/projects/{self.calc}/chat-suggestions").json()["questions"]

@@ -1,6 +1,6 @@
 // Small typed wrapper around the RepoSage API.
 
-export type AIStatus = "waiting" | "thinking" | "done" | "resting" | "off" | "busy";
+export type AIStatus = "waiting" | "thinking" | "done" | "resting" | "off" | "busy" | "setup" | "error";
 
 export interface Sample { id: string; title: string; language: string; blurb: string }
 export interface AppConfig {
@@ -52,7 +52,7 @@ export interface FunctionView {
 export type ExplainStatus =
   | { status: "thinking" }
   | { status: "done"; blocks: Record<string, string> }
-  | { status: "resting" | "off" | "busy"; message: string };
+  | { status: "resting" | "off" | "busy" | "setup" | "error"; message: string };
 
 export interface Cite { file: string; start: number; end: number; label?: string; function_id?: string | null }
 export interface AgentStep { tool: string; title: string; detail: string; thought?: string; refs: Cite[]; function_id?: string }
@@ -62,7 +62,7 @@ export interface ChatJob {
   followups?: string[]; focus?: Cite | null; cached?: boolean;
 }
 export type SimplerStatus = { status: "thinking" | "missing" } |
-  { status: "done" | "off" | "resting" | "busy"; answer: string; citations: Cite[]; message?: string };
+  { status: "done" | "off" | "resting" | "busy" | "setup" | "error"; answer: string; citations: Cite[]; message?: string };
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   let resp: Response;

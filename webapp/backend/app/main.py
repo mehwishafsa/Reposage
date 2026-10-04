@@ -8,6 +8,7 @@ or run the Vite dev server, which forwards /api here.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -20,9 +21,24 @@ from pydantic import BaseModel
 
 from . import config, db
 from .services import chat_agent, code_view, ingest, projects
-from .services.llm import llm
+from .services.llm import key_hint, llm
+
+# Log lines like "AI request failed: ... reason=auth" go to stdout (Render's Logs page).
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
+                    format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# httpx logs every request URL at INFO; a Vertex AI key travels in the URL (?key=),
+# so its request log must never be on.
+for noisy in ("httpx", "httpcore"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
 app = FastAPI(title="RepoSage", docs_url="/api/docs", openapi_url="/api/openapi.json")
+
+
+@app.on_event("startup")
+def describe_ai() -> None:
+    """Say at startup which AI is configured (never the key itself)."""
+    for line in llm.describe():
+        logging.getLogger("reposage.ai").info("AI setup: %s", line)
 
 SAMPLES = {
     "miniauth": {"title": "Mini login system", "language": "Python",
@@ -105,6 +121,22 @@ def get_config() -> dict:
         "samples": [{"id": k, **v} for k, v in SAMPLES.items()],
         "ai": llm.status(),
     }
+
+
+_last_check = [0.0]
+
+
+@app.get("/api/ai/check")
+def ai_check() -> dict:
+    """For the site owner: send one tiny request to the AI and report what
+    happened (provider, model, endpoint, reason). Never shows the key.
+    At most one real check every 20 seconds."""
+    if time.monotonic() - _last_check[0] < 20:
+        raise HTTPException(429, "Please wait 20 seconds between checks.")
+    _last_check[0] = time.monotonic()
+    result = llm.check()
+    result["key"] = {p.name: key_hint(p.key) for p in llm.chain()}
+    return result
 
 
 class PasteIn(BaseModel):
@@ -199,7 +231,7 @@ def project_overview(pid: str) -> dict:
 @app.post("/api/projects/{pid}/ai/retry")
 def project_ai_retry(pid: str) -> dict:
     p = _project_or_404(pid)
-    if p["status"] == "ready" and p["ai_status"] in ("busy", "resting", "off"):
+    if p["status"] == "ready" and p["ai_status"] in ("busy", "resting", "off", "setup", "error"):
         projects.retry_notes(pid)
     return {"ok": True}
 

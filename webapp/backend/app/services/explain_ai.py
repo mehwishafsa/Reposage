@@ -17,7 +17,7 @@ import json
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 
-from .llm import AIUnavailable, FakeProvider, llm
+from .llm import AIUnavailable, FakeProvider, llm, ui_status
 
 LEVELS = {
     "normal": ("Explain each block in 1 or 2 short sentences for a first-year computer science "
@@ -51,11 +51,11 @@ def status(project_id: str, view: dict, level: str) -> dict:
     except AIUnavailable as e:
         with _lock:
             _jobs.pop(key, None)                   # allow a retry later
-        return {"status": {"daily_limit": "resting", "off": "off"}.get(e.reason, "busy"), "message": str(e)}
+        return {"status": ui_status(e.reason), "message": str(e)}
     except Exception:
         with _lock:
             _jobs.pop(key, None)
-        return {"status": "busy", "message": AIUnavailable.MESSAGES["error"]}
+        return {"status": "error", "message": AIUnavailable.MESSAGES["error"]}
     return {"status": "done", "blocks": result}
 
 

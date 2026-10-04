@@ -24,6 +24,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -35,9 +36,12 @@ from .. import config  # noqa: F401  (puts the reposage engine on sys.path)
 from reposage.cache import write_json_atomic
 from reposage.rag import STOP_WORDS, Index
 
-from . import ai_notes, analyze, code_view
+from . import ai_notes, analyze, code_view, glossary
+from .constructs import LABELS, ConstructIndex
 from .flowchart import build_flowchart
-from .llm import AIUnavailable, FakeProvider, llm
+from .llm import AIUnavailable, FakeProvider, llm, message_for, ui_status
+
+log = logging.getLogger("reposage.chat")
 
 MAX_AI_CALLS = int(os.environ.get("CHAT_MAX_AI_CALLS", 4))        # free tier: 4 calls per question
 CHAT_TIER = os.environ.get("CHAT_MODEL_TIER", "smart")
@@ -75,6 +79,9 @@ TOOLS_HELP = """Tools (all read-only):
 - find_callees {"name": "run_choice"}: which functions it calls
 - get_flowchart {"name": "main"}: its steps as flowchart boxes (decisions, loops, menu cases)
 - project_overview {}: what the whole project is and where it starts
+- glossary {"term": "for loop"}: a short general explanation of a programming idea
+- find_construct {"kind": "for_loop"}: where the code uses a construct; kinds: for_loop, while_loop,
+  do_while, if, switch, return, break, continue, array, pointer, struct, include, print, input
 
 Reply with ONE of:
 {"thought": "why, in at most 12 words", "action": "<tool name>", "input": {...}}
@@ -115,6 +122,13 @@ class Toolbox:
         self.funcs = [n for n in self.graph["nodes"] if n["type"] in ("function", "method")]
         self.lines_cache: dict[str, list[str]] = {}
         self.seen: set[tuple[str, int]] = set()        # (file, line) the agent has looked at
+        self._constructs: Optional[ConstructIndex] = None
+
+    @property
+    def constructs(self) -> ConstructIndex:
+        if self._constructs is None:
+            self._constructs = ConstructIndex(self.src, self.graph)
+        return self._constructs
 
     # -- helpers
     def lines(self, path: str) -> list[str]:
@@ -251,6 +265,44 @@ class Toolbox:
                  "detail": ", ".join(parts) or _plural(len(kinds) - 2, "step") + ", no decisions", "refs": [self.ref(n)],
                  "function_id": n["id"]})
 
+    def glossary(self, term: str) -> tuple[str, dict]:
+        found = glossary.find_terms(term) or ([glossary.get(term)] if glossary.get(term) else [])
+        if not found:
+            return (f"glossary({term}): no entry.", {"tool": "glossary", "title": f'Looked up "{term}"',
+                                                     "detail": "Not in the glossary", "refs": []})
+        t = found[0]
+        return (f"glossary({t.title}): {t.normal}",
+                {"tool": "glossary", "title": f'Looked up "{t.title}" in the glossary',
+                 "detail": "General meaning", "refs": [], "term": t.key})
+
+    def find_construct(self, kind: str | tuple, only_in: Optional[set] = None) -> tuple[str, dict]:
+        kinds = (kind,) if isinstance(kind, str) else tuple(kind)
+        kinds = tuple(k for k in kinds if k in LABELS)
+        label = " / ".join(LABELS[k] for k in kinds) or str(kind)
+        hits = self.constructs.find(kinds)
+        place = "your code"
+        if only_in:                                  # "the loop in main()": only main's loops
+            hits = [h for h in hits if h.function_id in only_in]
+            place = ", ".join(sorted(f"{self.nodes[f]['name']}()" for f in only_in if f in self.nodes))
+        if not hits:
+            return (f"find_construct({label}): none in {place}.",
+                    {"tool": "find_construct", "title": f"Looked for {_a(label)} in {place}",
+                     "detail": "Not used in this project", "refs": []})
+        lines, refs = [], []
+        for h in hits[:8]:
+            where = f"{h.function_name}() in {h.file}" if h.function_name else h.file
+            lines.append(f"- {LABELS[h.kind]} in {where} lines {h.start}-{h.end}: {h.code}"
+                         + (f" [id: {h.function_id}]" if h.function_id else ""))
+            refs.append({"file": h.file, "start": h.start, "end": h.end, "function_id": h.function_id,
+                         "label": f"{h.function_name}()" if h.function_name else h.file, "kind": h.kind})
+            self.seen.add((h.file, h.start))
+        where = ", ".join(dict.fromkeys(r["label"] for r in refs[:3]))
+        found_kinds = list(dict.fromkeys(h.kind for h in hits))
+        count = f"{len(hits)} {' / '.join(LABELS[k] for k in found_kinds)}" + ("" if len(hits) == 1 else "s")
+        return (f"find_construct({label}) found {len(hits)}:\n" + "\n".join(lines),
+                {"tool": "find_construct", "title": f"Looked for {_a(label)} in {place}",
+                 "detail": f"Found {count}: {where}", "refs": refs})
+
     def project_overview(self) -> tuple[str, dict]:
         ov = ai_notes.apply_notes(copy.deepcopy(self.overview), ai_notes.load_notes(self.dir))
         files = "\n".join(f"- {f['path']}: {f['summary']}" for f in ov["files"][:25])
@@ -280,6 +332,10 @@ class Toolbox:
             return self.get_flowchart(str(args.get("name", "")))
         if action == "project_overview":
             return self.project_overview()
+        if action == "glossary":
+            return self.glossary(str(args.get("term", "")))
+        if action == "find_construct":
+            return self.find_construct(str(args.get("kind", "")))
         return (f"Unknown tool {action!r}.", {"tool": "unknown", "title": f"Tried {action}", "detail": "", "refs": []})
 
 
@@ -308,10 +364,26 @@ class Agent:
 
     def run(self, question: str, context: dict, history: list[dict], project_id: str) -> dict:
         t = self.tools
-        # 1. free steps (no AI): search, and the overview for general questions
-        self.step(*t.search_code(question))
-        hits = self.steps[0]["refs"]
-        if GENERAL.search(question) or not hits:
+        # 1. free steps (no AI)
+        self.terms = [x for x in glossary.find_terms(question)]
+        named = {f["id"] for f in t.funcs if re.search(rf"\b{re.escape(f['name'])}\b", question)}
+        # naming a function ("the for loop in power") makes it a question about that code
+        self.concept = glossary.is_concept_question(question, self.terms) and not named
+        construct_terms = [x for x in self.terms if set(x.kinds) - {"function", "declaration"}]
+        if self.concept:
+            self.step(*t.glossary(self.terms[0].key))
+        if construct_terms:
+            # "for", "if", "while"... are matched to the real constructs in the syntax tree,
+            # not searched as words (they are everywhere in English). If the question names
+            # a function ("the loop in main"), only that function's constructs count.
+            self.step(*t.find_construct(construct_terms[0].kinds, only_in=named or None))
+        example = next((r for s in self.steps for r in s["refs"] if r.get("function_id")), None)
+        if self.concept and example:
+            self.step(*t.read_function(example["function_id"]))
+        else:
+            self.step(*t.search_code(question))
+        hits = [r for s in self.steps for r in s["refs"]]
+        if (GENERAL.search(question) and not self.concept) or not hits:
             self.step(*t.project_overview())
         focus = context.get("fn") or ""
         if focus and re.search(r"\b(this|here|it)\b", question, re.I):
@@ -326,14 +398,15 @@ class Agent:
                 reply = llm.ask("chat_agent", SYSTEM, self.prompt(question, context, history, final),
                                 tier=CHAT_TIER, json=True, max_tokens=1100, project_id=project_id)
             except AIUnavailable as e:
-                return self.without_ai({"daily_limit": "resting", "off": "off"}.get(e.reason, "busy"), question)
+                return self.without_ai(ui_status(e.reason), question)
             self.calls += 1
             data = _loads(reply)
             action = str(data.get("action", "")).strip()
             if action == "answer" or final or not action:
                 if not data.get("answer"):
+                    log.warning("Chat agent reply had no usable action (call %d): %r", self.calls, reply[:200])
                     if final:
-                        return self.without_ai("busy", question)
+                        return self.without_ai("error", question)
                     self.transcript.append("(Reply with a valid JSON object, please.)")
                     continue
                 return self.finish(data, question)
@@ -342,7 +415,8 @@ class Agent:
                 self.transcript.append(f"(You already did {step['title']}; use what you have.)")
                 continue
             self.step(text, step, thought=str(data.get("thought", "")))
-        return self.without_ai("busy", question)
+        log.warning("Chat agent used all %d AI calls without answering", MAX_AI_CALLS)
+        return self.without_ai("error", question)
 
     def prompt(self, question: str, context: dict, history: list[dict], final: bool) -> str:
         parts = [TOOLS_HELP, ""]
@@ -360,6 +434,10 @@ class Agent:
         parts.append("\n\n".join(self.transcript)[-9000:])
         parts.append("")
         parts.append(ANSWER_STYLE["normal"])
+        if getattr(self, "concept", False):
+            parts.append("This is a question about a programming idea: first explain the idea in 1-2 general "
+                         "sentences, then show where and how the student's own code uses it, with citations. "
+                         "If the code doesn't use it, say so.")
         if final:
             parts.append("This is your LAST turn: you must reply with action \"answer\" now.")
         else:
@@ -381,7 +459,9 @@ class Agent:
     def without_ai(self, reason: str, question: str) -> dict:
         """No AI: finish the investigation with the tools alone and show the best code."""
         t = self.tools
-        msg = AIUnavailable.MESSAGES.get({"resting": "daily_limit"}.get(reason, reason), "")
+        msg = message_for(reason)
+        if getattr(self, "concept", False):
+            return self.concept_without_ai(reason, msg, question)
         best = next((r for s in self.steps for r in s["refs"] if r.get("function_id")), None)
         general = any(s["tool"] == "project_overview" for s in self.steps) and GENERAL.search(question)
         if best is None or general:
@@ -419,16 +499,66 @@ class Agent:
 
     def matching_box(self, n: dict, question: str) -> str:
         """No AI: if the question is about a loop / decision / menu, explain that box."""
-        words = set(re.findall(r"[a-z]+", question.lower()))
-        wanted = [k for k, ws in KIND_WORDS.items() if words & set(ws)]
-        if not wanted:
-            return ""
-        src = code_view.read_source(self.tools.dir, n["path"])
-        fc = build_flowchart(n["path"], src, n["start_line"], n["end_line"], n["name"], self.tools.known)
-        box = next((b for k in wanted for b in (fc or {}).get("boxes", []) if b["kind"] == k), None)
+        box = self.box_for(n, question)
         if box is None:
             return ""
         return f" The {'menu' if box['kind'] == 'switch' else box['kind']} at [{n['path']}:{box['lines'][0]}]: {box['explain']}"
+
+    def box_for(self, n: dict, question: str, line: Optional[int] = None) -> Optional[dict]:
+        """The flowchart box of function n that the question (or a construct line) is about."""
+        terms = glossary.find_terms(question)
+        kinds = {k for term in terms for k in term.kinds}
+        words = set(re.findall(r"[a-z]+", question.lower()))
+        wanted = {BOX_KIND[k] for k in kinds if k in BOX_KIND} | \
+                 {k for k, ws in KIND_WORDS.items() if words & set(ws)}
+        if not wanted and line is None:
+            return None
+        src = code_view.read_source(self.tools.dir, n["path"])
+        fc = build_flowchart(n["path"], src, n["start_line"], n["end_line"], n["name"], self.tools.known)
+        boxes = (fc or {}).get("boxes", [])
+        if line is not None:
+            here = [b for b in boxes if b["lines"][0] <= line <= b["lines"][1] and b["kind"] not in ("start", "end")]
+            # the loop/decision box itself, not the `i = 0` step on the same line
+            exact = next((b for b in here if b["kind"] in wanted), None) or \
+                next((b for b in here if b["kind"] != "action"), None) or (here[0] if here else None)
+            if exact:
+                return exact
+        # a construct of the asked kind in this function, if the construct finder saw one
+        lines = {c.start for c in self.tools.constructs.find(tuple(kinds)) if c.function_id == n["id"]} if kinds else set()
+        return next((b for b in boxes if b["kind"] in wanted and b["lines"][0] in lines), None) \
+            or next((b for b in boxes if b["kind"] in wanted), None)
+
+    def concept_without_ai(self, reason: str, msg: str, question: str) -> dict:
+        """No AI, concept question: the glossary meaning, then the student's own example."""
+        t = self.tools
+        term = self.terms[0]
+        examples = [r for s in self.steps if s["tool"] == "find_construct" for r in s["refs"]]
+        if not examples and term.kinds == ("function",):
+            examples = [r for s in self.steps for r in s["refs"] if r.get("function_id")][:3]
+        answer = f"{term.normal}"
+        simpler = f"{term.simpler}"
+        focus = None
+        if examples:
+            ex = examples[0]
+            where = f"`{ex['label']}`" if ex.get("function_id") else ex["file"]
+            answer += f"\n\nIn your code: {where} uses one [{ex['file']}:{ex['start']}-{ex['end']}]."
+            n = t.nodes.get(ex.get("function_id") or "")
+            box = self.box_for(n, question, line=ex["start"]) if n else None
+            if box and box["kind"] not in ("start", "end", "action"):
+                answer += f" {box['explain']}"
+            others = examples[1:4]
+            if others:
+                answer += " You can also see it in " + ", ".join(
+                    f"`{o['label']}` [{o['file']}:{o['start']}]" for o in others) + "."
+            simpler += f" In your code, look at {where} [{ex['file']}:{ex['start']}]."
+            focus = {"function_id": ex.get("function_id"), "file": ex["file"], "start": ex["start"], "end": ex["end"]}
+        elif term.kinds != ("function",):
+            answer += f"\n\nThis project doesn't use a {term.title} yet."
+        answer, cites = clean_citations(answer, t)
+        simpler, _ = clean_citations(simpler, t)
+        return {"mode": "no_ai", "reason": reason, "message": msg, "answer": answer, "citations": cites,
+                "simpler_answer": simpler, "followups": default_followups(t, self.steps, question),
+                "steps": self.steps, "focus": focus}
 
     def focus(self, cites: list[dict]) -> Optional[dict]:
         """What the evidence panel shows first: the function of the first citation."""
@@ -512,6 +642,10 @@ def suggestions(project_dir: str) -> list[str]:
     return out[:4]
 
 
+def _a(label: str) -> str:
+    return ("an " if label[:1].lower() in "aeiou" else "a ") + label
+
+
 def _plural(n: int, word: str) -> str:
     return f"{n} {word}" + ("" if n == 1 else "s")
 
@@ -525,8 +659,10 @@ def _synonyms(word: str) -> str:
     return ""
 
 
-KIND_WORDS = {"loop": ("loop", "repeat", "again", "while", "for"), "decision": ("if", "check", "zero", "decide", "else", "wrong", "fail"),
-              "switch": ("menu", "choice", "choose", "option", "switch", "case")}
+KIND_WORDS = {"loop": ("loop", "loops", "repeat", "again"), "decision": ("check", "zero", "decide", "wrong", "fail"),
+              "switch": ("menu", "choice", "choose", "option")}
+BOX_KIND = {"for_loop": "loop", "while_loop": "loop", "do_while": "loop", "if": "decision", "switch": "switch",
+            "return": "return"}
 
 
 def _loads(text: str) -> dict:
@@ -604,7 +740,8 @@ def simpler(project_id: str, qid: str) -> dict:
     if j.get("simpler"):
         return {"status": "done", "answer": j["simpler"]["answer"], "citations": j["simpler"]["citations"]}
     if j.get("mode") != "ai":
-        return {"status": "done", "answer": _simple_fallback(j), "citations": j.get("citations", [])}
+        return {"status": "done", "answer": j.get("simpler_answer") or _simple_fallback(j),
+                "citations": j.get("citations", [])}
     with _lock:
         if not _jobs[qid].get("simpler_started"):
             _jobs[qid]["simpler_started"] = True
@@ -612,7 +749,7 @@ def simpler(project_id: str, qid: str) -> dict:
     j = job(qid)
     if j.get("simpler"):
         return {"status": "done", "answer": j["simpler"]["answer"], "citations": j["simpler"]["citations"]}
-    if j.get("simpler_state") in ("off", "resting", "busy"):
+    if j.get("simpler_state") in ("off", "resting", "busy", "setup", "error"):
         return {"status": j["simpler_state"], "message": j.get("simpler_message", ""),
                 "answer": _simple_fallback(j), "citations": j.get("citations", [])}
     return {"status": "thinking"}
@@ -635,7 +772,7 @@ def _make_simpler(project_id: str, qid: str, j: dict) -> None:
                                      "citations": j.get("citations", [])}
     except AIUnavailable as e:
         with _lock:
-            _jobs[qid]["simpler_state"] = {"daily_limit": "resting", "off": "off"}.get(e.reason, "busy")
+            _jobs[qid]["simpler_state"] = ui_status(e.reason)
             _jobs[qid]["simpler_message"] = str(e)
 
 

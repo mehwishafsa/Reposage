@@ -20,7 +20,7 @@ import re
 from reposage.cache import write_json_atomic
 
 from .. import config
-from .llm import AIUnavailable, FakeProvider, llm
+from .llm import AIUnavailable, FakeProvider, llm, ui_status
 
 SYSTEM = ("You explain code to first-year computer science students. Use simple, friendly "
           "English and short sentences. Avoid jargon, or explain it in a few words. "
@@ -69,7 +69,7 @@ def write_notes(project_dir: str, overview: dict, on_status=lambda s: None) -> s
                                      "start_reason": _clean(data.get("start_here", ""), 300)}
             write_json_atomic(notes_path(project_dir), notes)
     except AIUnavailable as e:
-        return {"daily_limit": "resting", "off": "off"}.get(e.reason, "busy")
+        return ui_status(e.reason)
     return "done"
 
 

@@ -271,7 +271,7 @@ class ExplainerApiTest(unittest.TestCase):
                     break
                 time.sleep(0.03)
             self.assertEqual(r["status"], "off")
-            self.assertIn("switched off", r["message"])
+            self.assertIn("isn't set up", r["message"])
         finally:
             config.AI_PROVIDER, config.AI_FALLBACK = old, "none"
             llm.reset()
