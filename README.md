@@ -87,8 +87,8 @@ The tool protocol is plain JSON in the prompt rather than a vendor's function-ca
   - Every answer is cached in SQLite, and AI output that isn't valid JSON is never cached.
 - **C support across files:** a call in `main.c` to a function declared in `calc.h` is linked to its body in `calc.c`.
 - **Stress run:** the flowchart builder was run over all 4,004 functions of two open-source projects ([ky](https://github.com/sindresorhus/ky) in TypeScript and [gson](https://github.com/google/gson) in Java) plus RepoSage's own Python code. Every function got a flowchart, with no crashes, and every box was reachable from the start. The first run found one Java construct it didn't handle (compact record constructors), which is now fixed.
-- **115 automated tests:**
-  - 42 for the web app: upload safety, the AI queue and fallback, flowcharts in all five languages, the chat agent's step limit and citation checks.
+- **131 automated tests:**
+  - 58 for the web app: upload safety, the AI queue and fallback, AI error handling against fake Google servers, flowcharts in all five languages, the chat agent's step limit and citation checks.
   - 73 for the analysis engine and the Claude Code plugin (1 skipped).
   - All of them use a fake AI provider and need no network.
 
