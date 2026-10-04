@@ -65,28 +65,48 @@ SYNONYMS = {
 
 SYSTEM = (
     "You are RepoSage, a kind tutor for first-year programming students. You answer questions about "
-    "the student's own code by using read-only tools. Rules: (1) Use ONLY facts you saw in tool "
+    "the student's own code by calling read-only tools. Rules: (1) Use ONLY facts you saw in tool "
     "results; if the code doesn't answer the question, say so honestly. (2) Very simple English, "
     "short sentences, no jargon (or explain it in a few words). (3) Cite the code for every claim "
     "like [calc.c:22] or [calc.c:22-26], using real file names and line numbers from the tool "
-    "results. (4) Reply with ONE JSON object only.")
+    "results. (4) When you know enough, call final_answer.")
 
-TOOLS_HELP = """Tools (all read-only):
-- search_code {"query": "words"}: find functions about these words
-- read_function {"name": "divide"}: the code of a function, with line numbers
-- read_file {"path": "main.c", "start": 1, "end": 40}: some lines of a file
-- find_callers {"name": "divide"}: which functions call it
-- find_callees {"name": "run_choice"}: which functions it calls
-- get_flowchart {"name": "main"}: its steps as flowchart boxes (decisions, loops, menu cases)
-- project_overview {}: what the whole project is and where it starts
-- glossary {"term": "for loop"}: a short general explanation of a programming idea
-- find_construct {"kind": "for_loop"}: where the code uses a construct; kinds: for_loop, while_loop,
-  do_while, if, switch, return, break, continue, array, pointer, struct, include, print, input
+_WHY = {"type": "string", "description": "In a few words, why you call this tool (shown to the student)."}
+_NAME = {"type": "string", "description": "Function name, e.g. divide, or file::name from earlier results."}
 
-Reply with ONE of:
-{"thought": "why, in at most 12 words", "action": "<tool name>", "input": {...}}
-{"thought": "...", "action": "answer", "answer": "<your answer with [file:line] citations>",
- "followups": ["<question 1>", "<question 2>", "<question 3>"]}"""
+
+def _tool(name: str, description: str, props: dict, required: list[str]) -> dict:
+    return {"name": name, "description": description,
+            "parameters": {"type": "object", "properties": {**props, "why": _WHY}, "required": required + ["why"]}}
+
+
+TOOL_DECLS = [
+    _tool("search_code", "Find functions related to some words (searches names, comments, code and summaries).",
+          {"query": {"type": "string", "description": "A few keywords, e.g. 'divide zero'."}}, ["query"]),
+    _tool("read_function", "Read the code of one function, with line numbers.", {"name": _NAME}, ["name"]),
+    _tool("read_file", "Read some lines of a file, with line numbers.",
+          {"path": {"type": "string"}, "start": {"type": "integer"}, "end": {"type": "integer"}}, ["path"]),
+    _tool("find_callers", "Which functions call this function.", {"name": _NAME}, ["name"]),
+    _tool("find_callees", "Which functions this function calls.", {"name": _NAME}, ["name"]),
+    _tool("get_flowchart", "The steps of a function as flowchart boxes (decisions, loops, menu cases).",
+          {"name": _NAME}, ["name"]),
+    _tool("find_construct", "Where the code uses a language construct.",
+          {"kind": {"type": "string", "enum": ["for_loop", "while_loop", "do_while", "if", "switch", "return",
+                                                "break", "continue", "array", "pointer", "struct", "include",
+                                                "print", "input"]}}, ["kind"]),
+    _tool("glossary", "A short general explanation of a programming idea, e.g. 'for loop'.",
+          {"term": {"type": "string"}}, ["term"]),
+    _tool("project_overview", "What the whole project is, its files, and where the program starts.", {}, []),
+]
+FINAL_ANSWER = {
+    "name": "final_answer",
+    "description": "Give the student your answer. Call this once you know enough.",
+    "parameters": {"type": "object", "properties": {
+        "answer": {"type": "string", "description": "The answer with [file:line] citations."},
+        "followups": {"type": "array", "items": {"type": "string"},
+                      "description": "Three short follow-up questions the student could ask next."}},
+        "required": ["answer", "followups"]},
+}
 
 ANSWER_STYLE = {
     "normal": "Answer in 2-5 short sentences (or up to 5 numbered steps for a process). Name the "
@@ -348,16 +368,23 @@ GENERAL = re.compile(r"\b(program|project|app|application|whole|overall|start|st
 
 
 class Agent:
-    def __init__(self, project_dir: str, emit: Callable[[dict], None]):
+    def __init__(self, project_dir: str, emit: Callable[[dict], None], run_id: str = "-"):
+        self.run_id = run_id
         self.tools = Toolbox(project_dir)
         self.emit = emit
         self.steps: list[dict] = []
         self.transcript: list[str] = []
         self.calls = 0
 
-    def step(self, text: str, step: dict, thought: str = "") -> None:
+    def step(self, text: str, step: dict, thought: str = "", by_ai: bool = False, args: Optional[dict] = None) -> None:
         if thought:
             step["thought"] = thought[:140]
+        n = len(self.steps) + 1
+        if by_ai:
+            log.info("[chat %s] step %d: model chose %s(%s) because %r -> %s: %s", self.run_id, n, step["tool"],
+                     _short_args(args), thought[:120], step["title"], step.get("detail", ""))
+        else:
+            log.info("[chat %s] step %d (no AI): %s: %s", self.run_id, n, step["title"], step.get("detail", ""))
         self.steps.append(step)
         self.transcript.append(text[:TOOL_TEXT_LIMIT])
         self.emit({"steps": self.steps})
@@ -391,35 +418,55 @@ class Agent:
 
         if not llm.chain():
             return self.without_ai("off", question)
-        # 2. the AI chooses tools until it can answer
+        # 2. the AI picks tools (native function calling) until it calls final_answer
+        messages = [{"role": "user", "text": self.first_message(question, context, history)}]
         for i in range(MAX_AI_CALLS):
             final = i == MAX_AI_CALLS - 1
             try:
-                reply = llm.ask("chat_agent", SYSTEM, self.prompt(question, context, history, final),
-                                tier=CHAT_TIER, json=True, max_tokens=1100, project_id=project_id)
+                reply = llm.ask_tools("chat_agent", SYSTEM, messages,
+                                      [FINAL_ANSWER] if final else TOOL_DECLS + [FINAL_ANSWER],
+                                      tier=CHAT_TIER, force="final_answer" if final else None,
+                                      max_tokens=1200, project_id=project_id)
             except AIUnavailable as e:
+                log.warning("[chat %s] AI not available (%s): %s", self.run_id, e.reason, e.detail[:300])
                 return self.without_ai(ui_status(e.reason), question)
             self.calls += 1
-            data = _loads(reply)
-            action = str(data.get("action", "")).strip()
-            if action == "answer" or final or not action:
-                if not data.get("answer"):
-                    log.warning("Chat agent reply had no usable action (call %d): %r", self.calls, reply[:200])
-                    if final:
-                        return self.without_ai("error", question)
-                    self.transcript.append("(Reply with a valid JSON object, please.)")
-                    continue
-                return self.finish(data, question)
-            text, step = t.run(action, data.get("input") or {})
-            if any(s.get("title") == step["title"] for s in self.steps):
-                self.transcript.append(f"(You already did {step['title']}; use what you have.)")
+            done = next((c for c in reply.calls if c["name"] == "final_answer"), None)
+            if done:
+                return self.finish(done["args"], question)
+            if not reply.calls:
+                if reply.text.strip():                     # answered in plain text: accept it
+                    log.info("[chat %s] model answered without final_answer", self.run_id)
+                    return self.finish({"answer": reply.text}, question)
+                log.warning("[chat %s] model reply had neither text nor tool calls", self.run_id)
                 continue
-            self.step(text, step, thought=str(data.get("thought", "")))
-        log.warning("Chat agent used all %d AI calls without answering", MAX_AI_CALLS)
+            messages.append(reply.as_message())
+            results = []
+            for k, c in enumerate(reply.calls):
+                args = dict(c.get("args") or {})
+                why = str(args.pop("why", "") or reply.text or "")
+                if k >= 3:
+                    content = "Skipped: at most 3 tools per turn."
+                else:
+                    text, step = t.run(c["name"], args)
+                    if any(s.get("title") == step["title"] for s in self.steps):
+                        content = f"You already did this ({step['title']}). Use what you have."
+                        log.info("[chat %s] model repeated %s(%s); told to use what it has",
+                                 self.run_id, c["name"], _short_args(args))
+                    else:
+                        self.step(text, step, thought=why, by_ai=True, args=args)
+                        content = text[:TOOL_TEXT_LIMIT]
+                results.append({"id": c["id"], "name": c["name"], "content": content})
+            messages.append({"role": "tool", "results": results})
+            left = MAX_AI_CALLS - 2 - i
+            messages.append({"role": "user", "text": f"You may call {left} more round(s) of tools; call "
+                                                     "final_answer as soon as you know enough." if left > 0
+                             else "Now call final_answer."})
+        log.warning("[chat %s] model used all %d AI calls without answering", self.run_id, MAX_AI_CALLS)
         return self.without_ai("error", question)
 
-    def prompt(self, question: str, context: dict, history: list[dict], final: bool) -> str:
-        parts = [TOOLS_HELP, ""]
+    def first_message(self, question: str, context: dict, history: list[dict]) -> str:
+        parts = []
         if history:
             parts.append("Earlier in this chat:")
             for h in history[-2:]:
@@ -428,26 +475,25 @@ class Agent:
         if context.get("file"):
             where = f"function {context['fn'].split('::')[-1]}() in " if context.get("fn") else ""
             parts.append(f"The student is looking at {where}{context['file']}.")
-        parts.append(f"Student's question: {question}")
-        parts.append("")
-        parts.append("What you have found so far:")
-        parts.append("\n\n".join(self.transcript)[-9000:])
-        parts.append("")
-        parts.append(ANSWER_STYLE["normal"])
+        parts += [f"Student's question: {question}", "",
+                  "What RepoSage already found for you (no need to repeat these):",
+                  "\n\n".join(self.transcript)[-9000:], "", ANSWER_STYLE["normal"]]
         if getattr(self, "concept", False):
             parts.append("This is a question about a programming idea: first explain the idea in 1-2 general "
                          "sentences, then show where and how the student's own code uses it, with citations. "
                          "If the code doesn't use it, say so.")
-        if final:
-            parts.append("This is your LAST turn: you must reply with action \"answer\" now.")
-        else:
-            parts.append(f"You may use {MAX_AI_CALLS - 1 - self.calls} more tools before answering. "
-                         "Answer as soon as you have enough.")
+        parts.append(f"You can use up to {MAX_AI_CALLS - 1} rounds of tools. If what is above is enough, "
+                     "call final_answer right away.")
         return "\n".join(parts)
 
     def finish(self, data: dict, question: str) -> dict:
         answer, cites = clean_citations(str(data.get("answer", "")), self.tools)
-        followups = [str(f).strip()[:120] for f in (data.get("followups") or []) if str(f).strip()][:3]
+        log.info("[chat %s] done: AI answer after %d AI call(s), %d step(s), %d citation(s): %r", self.run_id,
+                 self.calls, len(self.steps), len(cites), answer[:160])
+        raw_followups = data.get("followups") or []
+        if isinstance(raw_followups, str):
+            raw_followups = [raw_followups]
+        followups = [str(f).strip()[:120] for f in raw_followups if str(f).strip()][:3]
         if len(followups) < 3:
             followups += [f for f in default_followups(self.tools, self.steps, question) if f not in followups]
         return {"mode": "ai", "answer": answer, "citations": cites, "followups": followups[:3],
@@ -460,6 +506,7 @@ class Agent:
         """No AI: finish the investigation with the tools alone and show the best code."""
         t = self.tools
         msg = message_for(reason)
+        log.info("[chat %s] done without AI (reason=%s) after %d step(s)", self.run_id, reason, len(self.steps))
         if getattr(self, "concept", False):
             return self.concept_without_ai(reason, msg, question)
         best = next((r for s in self.steps for r in s["refs"] if r.get("function_id")), None)
@@ -642,6 +689,10 @@ def suggestions(project_dir: str) -> list[str]:
     return out[:4]
 
 
+def _short_args(args: Optional[dict]) -> str:
+    return ", ".join(f"{k}={str(v)[:40]!r}" for k, v in (args or {}).items())
+
+
 def _a(label: str) -> str:
     return ("an " if label[:1].lower() in "aeiou" else "a ") + label
 
@@ -710,12 +761,16 @@ def ask(project_id: str, project_dir: str, question: str, context: dict, history
 
     def work() -> None:
         try:
-            result = Agent(project_dir, emit).run(question, context, history, project_id)
+            log.info("[chat %s] question=%r project=%s context=%s", qid[:8], question[:200], project_id, context or "-")
+            started = time.monotonic()
+            result = Agent(project_dir, emit, run_id=qid[:8]).run(question, context, history, project_id)
+            log.info("[chat %s] finished in %.1fs (mode=%s)", qid[:8], time.monotonic() - started, result["mode"])
             if result["mode"] == "ai":
                 write_json_atomic(_cache_path(project_dir, key), result)
             with _lock:
                 _jobs[qid] = {**result, "status": "done", "question": question}
         except Exception as e:                          # never leave the student waiting
+            log.exception("[chat %s] crashed", qid[:8])
             with _lock:
                 _jobs[qid].update({"status": "error", "message": "Something went wrong while answering. "
                                                                  f"Please try again. ({type(e).__name__})"})
@@ -789,23 +844,20 @@ def _simple_fallback(j: dict) -> str:
 # Fake AI (tests, offline development): a tiny scripted agent.
 # ---------------------------------------------------------------------------
 
-def _fake_agent(system: str, prompt: str) -> str:
-    found = prompt.split("What you have found so far:", 1)[-1]
-    first = re.search(r"\[id: ([^\]]+)\]", found)
-    if "read_function(" not in found and first:
-        return json.dumps({"thought": "Read the best match first", "action": "read_function",
-                           "input": {"name": first.group(1)}})
-    if "find_callers(" not in found and first:
-        return json.dumps({"thought": "See who uses it", "action": "find_callers",
-                           "input": {"name": first.group(1)}})
-    m = re.search(r"read_function\((\w+)\) - ([\w./-]+) lines (\d+)-(\d+)", found)
-    if m:
-        name, path, a, b = m.groups()
-        answer = f"The function `{name}` does this [{path}:{a}-{b}]. (Written by the fake test AI.)"
-    else:
-        answer = "I could not find it in the code. (Written by the fake test AI.)"
-    return json.dumps({"thought": "I have enough", "action": "answer", "answer": answer,
-                       "followups": ["Fake follow-up one?", "Fake follow-up two?", "Fake follow-up three?"]})
+def _fake_agent(system: str, messages: list, tools: list) -> dict:
+    """Scripted test agent: read the best match, check its callers, then answer."""
+    first = re.search(r"\[id: ([^\]]+)\]", messages[0]["text"])
+    done = [r["name"] for m in messages if m["role"] == "tool" for r in m["results"]]
+    if "read_function" not in done and first:
+        return {"calls": [{"name": "read_function", "args": {"name": first.group(1), "why": "Read the best match first"}}]}
+    if "find_callers" not in done and first:
+        return {"calls": [{"name": "find_callers", "args": {"name": first.group(1), "why": "See who uses it"}}]}
+    seen = "\n".join(r["content"] for m in messages if m["role"] == "tool" for r in m["results"]) + messages[0]["text"]
+    m = re.search(r"read_function\((\w+)\) - ([\w./-]+) lines (\d+)-(\d+)", seen)
+    answer = (f"The function `{m.group(1)}` does this [{m.group(2)}:{m.group(3)}-{m.group(4)}]. (Written by the fake test AI.)"
+              if m else "I could not find it in the code. (Written by the fake test AI.)")
+    return {"calls": [{"name": "final_answer", "args": {
+        "answer": answer, "followups": ["Fake follow-up one?", "Fake follow-up two?", "Fake follow-up three?"]}}]}
 
 
 def _fake_simpler(system: str, prompt: str) -> str:
@@ -814,4 +866,5 @@ def _fake_simpler(system: str, prompt: str) -> str:
     return json.dumps({"answer": f"It is like a recipe card.{ref} (Simpler, by the fake test AI.)"})
 
 
-FakeProvider.handlers.update({"chat_agent": _fake_agent, "chat_simpler": _fake_simpler})
+FakeProvider.handlers.update({"chat_simpler": _fake_simpler})
+FakeProvider.tool_handlers.update({"chat_agent": _fake_agent})

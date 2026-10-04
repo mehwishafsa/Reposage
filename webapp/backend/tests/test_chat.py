@@ -81,6 +81,17 @@ class ChatTest(unittest.TestCase):
         t2 = chat_agent.Toolbox(projects.project_dir(make_project("todo-python")))
         self.assertEqual(t2.search_code("How are tasks saved?")[1]["refs"][0]["label"], "save_tasks()")
 
+    def test_agent_logs_every_step(self):
+        with self.assertLogs("reposage.chat", "INFO") as logs:
+            ask(self.calc, "How does multiply work?")
+        text = "\n".join(logs.output)
+        self.assertIn("question='How does multiply work?'", text)
+        self.assertIn("step 1 (no AI): Searched", text)
+        self.assertIn("step 2: model chose read_function(name='calc.c::multiply') because 'Read the best match first'", text)
+        self.assertIn("step 3: model chose find_callers", text)
+        self.assertIn("done: AI answer after 3 AI call(s)", text)
+        self.assertRegex(text, r"finished in [\d.]+s \(mode=ai\)")
+
     def test_agent_shows_steps_and_cites_real_lines(self):
         job = ask(self.calc, "How does the calculator divide?")
         self.assertEqual(job["mode"], "ai")
@@ -102,17 +113,20 @@ class ChatTest(unittest.TestCase):
         """An AI that never stops using tools is cut off after CHAT_MAX_AI_CALLS."""
         calls = []
 
-        def endless(system, prompt):
-            calls.append(1)
-            return json.dumps({"thought": "more", "action": "search_code", "input": {"query": f"x{len(calls)}"}})
-        old = FakeProvider.handlers["chat_agent"]
-        FakeProvider.handlers["chat_agent"] = endless
+        def endless(system, messages, tools):
+            calls.append([t["name"] for t in tools])
+            return {"calls": [{"name": "search_code", "args": {"query": f"x{len(calls)}", "why": "more"}}]}
+        old = FakeProvider.tool_handlers["chat_agent"]
+        FakeProvider.tool_handlers["chat_agent"] = endless
         try:
             job = ask(self.calc, "endless question about power")
         finally:
-            FakeProvider.handlers["chat_agent"] = old
+            FakeProvider.tool_handlers["chat_agent"] = old
         self.assertEqual(len(calls), chat_agent.MAX_AI_CALLS)
-        self.assertEqual(job["mode"], "no_ai")               # still shows the best code
+        self.assertEqual(calls[-1], ["final_answer"])         # last turn: only final_answer is offered
+        self.assertIn("final_answer", calls[0])
+        self.assertEqual(len(calls[0]), 10)                   # 9 read-only tools + final_answer
+        self.assertEqual(job["mode"], "ai")                   # the forced final_answer ends it
         self.assertTrue(job["answer"])
 
     def test_daily_limit_mid_question_falls_back(self):
@@ -175,12 +189,12 @@ class ChatTest(unittest.TestCase):
 
     def test_concept_with_ai_gets_the_concept_instruction(self):
         seen = []
-        old = FakeProvider.handlers["chat_agent"]
-        FakeProvider.handlers["chat_agent"] = lambda s, p: (seen.append(p), old(s, p))[1]
+        old = FakeProvider.tool_handlers["chat_agent"]
+        FakeProvider.tool_handlers["chat_agent"] = lambda s, m, t: (seen.append(m[0]["text"]), old(s, m, t))[1]
         try:
             job = ask(self.calc, "Why use a switch statement?")
         finally:
-            FakeProvider.handlers["chat_agent"] = old
+            FakeProvider.tool_handlers["chat_agent"] = old
         self.assertEqual(job["steps"][1]["detail"], "Found 1 switch: run_choice()")
         self.assertIn("first explain the idea", seen[0])
         self.assertIn("glossary(switch statement):", seen[0])

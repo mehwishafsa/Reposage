@@ -8,14 +8,16 @@ or run the Vite dev server, which forwards /api here.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
+import re
 import threading
 import time
 from collections import defaultdict, deque
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -123,16 +125,50 @@ def get_config() -> dict:
     }
 
 
+class _HideToken(logging.Filter):
+    """Render's access log shows request URLs: hide ?token=... in them."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(re.sub(r"token=[^&\s\"]+", "token=***", a) if isinstance(a, str) else a
+                                for a in record.args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_HideToken())
+
+
+@app.get("/api/health/ai", include_in_schema=False)
+def health_ai(request: Request, token: str = "") -> PlainTextResponse:
+    """For the site owner only (set DIAG_TOKEN in Render): makes a few tiny real
+    AI calls and shows OK or the exact error. Never shows an API key."""
+    expected = os.environ.get("DIAG_TOKEN", "")
+    given = token or request.headers.get("x-diag-token", "")
+    if not expected:
+        raise HTTPException(404, "Not found")
+    if not hmac.compare_digest(given.encode(), expected.encode()):
+        raise HTTPException(403, "Wrong or missing token.")
+    if time.monotonic() - _last_check[0] < 15:
+        raise HTTPException(429, "Please wait 15 seconds between checks.")
+    _last_check[0] = time.monotonic()
+    report = llm.diagnose()
+    logging.getLogger("reposage.ai").info("Diagnostics run:\n%s", "\n".join(report))
+    return PlainTextResponse("\n".join(report) + "\n")
+
+
 _last_check = [0.0]
 
 
-@app.get("/api/ai/check")
-def ai_check() -> dict:
+@app.get("/api/ai/check", include_in_schema=False)
+def ai_check(request: Request, token: str = "") -> dict:
     """For the site owner: send one tiny request to the AI and report what
     happened (provider, model, endpoint, reason). Never shows the key.
     At most one real check every 20 seconds."""
-    if time.monotonic() - _last_check[0] < 20:
-        raise HTTPException(429, "Please wait 20 seconds between checks.")
+    expected = os.environ.get("DIAG_TOKEN", "")
+    if not expected or not hmac.compare_digest((token or request.headers.get("x-diag-token", "")).encode(),
+                                               expected.encode()):
+        raise HTTPException(404, "Not found. Use /api/health/ai?token=... (set DIAG_TOKEN on the server).")
+    if time.monotonic() - _last_check[0] < 15:
+        raise HTTPException(429, "Please wait 15 seconds between checks.")
     _last_check[0] = time.monotonic()
     result = llm.check()
     result["key"] = {p.name: key_hint(p.key) for p in llm.chain()}

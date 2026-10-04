@@ -49,12 +49,12 @@ Uploaded code is unpacked into a per-project folder and parsed with Tree-sitter 
 ### How the chat agent picks its tools
 
 1. **A free first step:** before any AI call, the question's keywords are searched (TF-IDF over the code, the AI summaries and a small list of beginner words such as "loop" → `for`/`while` and "menu" → `switch`). General questions also load the project overview.
-2. **The AI picks the next tool:** it sees the question, the tool list and everything found so far, and replies with one JSON action: `search_code`, `read_function`, `read_file`, `find_callers`, `find_callees`, `get_flowchart` or `project_overview`. Each tool only reads the uploaded files and the code graph.
-3. **Limits:** the agent may make at most 4 AI calls per question, the last one must be the answer, and a tool call it already made is refused.
+2. **The AI picks the next tool through native function calling:** the tools are declared to the model as functions (Gemini `functionDeclarations`, OpenAI-style `tools` for Groq, `tool_use` for Claude): `search_code`, `read_function`, `read_file`, `find_callers`, `find_callees`, `get_flowchart`, `find_construct`, `glossary` and `project_overview`. Each tool has a required `why` argument, which is shown to the student and written to the server log. Each tool only reads the uploaded files and the code graph.
+3. **Limits:** the agent may make at most 4 AI calls per question. It answers by calling `final_answer`; on its last turn that is the only tool offered (and forced where the provider supports it). A tool call it already made is refused.
 4. **Checks:** citations that don't point to real lines in real files are removed before the answer is shown.
 5. **Fallback:** if the AI is off, rate-limited or never answers, the same tools run without it, and the answer is the best matching code with its flowchart.
 
-The tool protocol is plain JSON in the prompt rather than a vendor's function-calling API, so the same agent works with Gemini, Groq and Claude.
+One provider-neutral message format is translated to each provider's function-calling API, so the same agent works with Gemini, Groq and Claude. Gemini's thought signatures are passed back unchanged between turns.
 
 ## Tech stack
 

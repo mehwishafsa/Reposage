@@ -62,7 +62,8 @@ Tests: `cd webapp/backend && .venv/bin/python -m unittest discover -s tests -t .
 | `CHAT_MODEL_TIER` | `smart` (default) or `fast` model for the chat agent |
 | `MAX_QUESTIONS_PER_HOUR` | chat questions per visitor per hour (default 60) |
 | `GEMINI_ENDPOINT` | `auto` (default), `aistudio` or `vertex`; see "Gemini keys" below |
-| `LOG_LEVEL` | `INFO` (default) logs one line per AI request and the reason when one fails |
+| `LOG_LEVEL` | `INFO` (default) logs one line per AI request and each chat-agent step |
+| `DIAG_TOKEN` | secret that unlocks the diagnostics page `/api/health/ai` (page is off without it) |
 
 ### Gemini keys and checking the AI
 
@@ -75,11 +76,25 @@ RepoSage tries the endpoint that fits the key first, falls back to the other one
 and remembers which one works. If a model has been retired, it asks Google
 which models the key can use and switches to the closest one (shown in the log).
 
-To check the setup, open `/api/ai/check` on the running server. It sends one
-tiny request and reports the provider, model, endpoint, the key's type and
-length (never the key itself) and, if it failed, the reason: `auth` (bad key or
-wrong endpoint), `model`, `region`, `rate_limit`, `daily_limit` or `bad_request`.
-The same reasons appear in the server log as `AI request failed: ... reason=...`.
+To check the setup, set `DIAG_TOKEN` on the server and open
+`/api/health/ai?token=<DIAG_TOKEN>`. It makes a few tiny real requests (each
+model tier on each endpoint, plus one function-calling test), bypassing the
+cache, and shows for each: model, endpoint, HTTP status, Google's message and
+the time taken. For AI Studio keys it also lists the models the key can use.
+It shows the key's type and length, never the key; the token is masked in the
+access log. At most one run every 15 seconds.
+
+Reasons: `auth` (bad key or wrong endpoint), `model`, `region`, `rate_limit`,
+`daily_limit` or `bad_request`. The same reasons appear in the server log as
+`AI request failed: ... reason=...`.
+
+Every chat question is logged step by step, with the same id on each line:
+
+    [chat 1a2b3c4d] question='How does the calculator divide?' project=... context=-
+    [chat 1a2b3c4d] step 1 (no AI): Searched "calculator divide": Found divide(), ...
+    [chat 1a2b3c4d] step 2: model chose read_function(name='divide') because 'read the match' -> ...
+    [chat 1a2b3c4d] done: AI answer after 2 AI call(s), 2 step(s), 1 citation(s): '...'
+    [chat 1a2b3c4d] finished in 9.8s (mode=ai)
 
 Free-tier friendly: requests are queued one at a time, retried politely on
 "slow down" answers, counted per day, and every answer is cached in SQLite.

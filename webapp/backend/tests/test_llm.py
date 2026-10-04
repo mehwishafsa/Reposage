@@ -179,15 +179,119 @@ class StudentMessagesAndLogsTest(unittest.TestCase):
             429, "RESOURCE_EXHAUSTED", "Quota exceeded for GenerateRequestsPerDayPerProjectPerModel")))
         self.assertEqual(self.reason("p4").reason, "daily_limit")
 
-    def test_check_endpoint_reports_reason(self):
+    def test_diagnostics_page_needs_the_token_and_reports_errors(self):
         from fastapi.testclient import TestClient
         from app import main
-        self.use(lambda req: httpx.Response(404, text=google_error(404, "NOT_FOUND", "model not found")))
-        main._last_check[0] = 0
-        body = TestClient(main.app).get("/api/ai/check").json()
-        self.assertEqual((body["ok"], body["reason"]), (False, "model"))
-        self.assertIn("Vertex AI express style", body["key"]["gemini"])
-        self.assertNotIn(AQ_KEY, json.dumps(body))
+        client = TestClient(main.app)
+        os.environ.pop("DIAG_TOKEN", None)
+        self.assertEqual(client.get("/api/health/ai?token=x").status_code, 404)     # off without DIAG_TOKEN
+        os.environ["DIAG_TOKEN"] = "letmein"
+        try:
+            self.assertEqual(client.get("/api/health/ai?token=wrong").status_code, 403)
+            self.assertEqual(client.get("/api/ai/check").status_code, 404)
+            gemini = llm.chain()[0]
+
+            def google(req):
+                if req.method == "GET":
+                    return httpx.Response(200, json={"models": [
+                        {"name": "models/gemini-3.1-flash", "supportedGenerationMethods": ["generateContent"]}]})
+                if "lite" in req.url.path:
+                    return httpx.Response(404, text=google_error(404, "NOT_FOUND", "models/x is not found"))
+                body = json.loads(req.content)
+                if "tools" in body:
+                    return httpx.Response(200, json={"candidates": [{"content": {"parts": [
+                        {"functionCall": {"name": "ping", "args": {"word": "hello"}}}]}}]})
+                return httpx.Response(200, json=OK)
+            original = main.llm._providers
+            import app.services.llm as llm_module
+            real_provider = llm_module.PROVIDERS["gemini"]
+            llm_module.PROVIDERS["gemini"] = lambda: gemini
+            gemini.client = httpx.Client(transport=httpx.MockTransport(google))
+            main._last_check[0] = 0
+            try:
+                report = client.get("/api/health/ai", params={"token": "letmein"}).text
+            finally:
+                llm_module.PROVIDERS["gemini"] = real_provider
+            self.assertIn("Vertex AI express style (AQ....), 27 characters", report)
+            self.assertIn("fast model gemini-2.5-flash-lite via vertex: FAILED HTTP 404 reason=model", report)
+            self.assertIn("smart model gemini-2.5-flash via vertex: OK", report)
+            self.assertIn("function calling gemini-2.5-flash via vertex: OK", report)
+            self.assertIn("[tool call: ping({'word': 'hello'})]", report)
+            self.assertNotIn(AQ_KEY, report)
+            self.assertEqual(client.get("/api/health/ai", params={"token": "letmein"}).status_code, 429)
+        finally:
+            os.environ.pop("DIAG_TOKEN", None)
+
+
+class ToolCallingFormatTest(unittest.TestCase):
+    """What each provider receives and how its reply is read."""
+
+    TOOLS = [{"name": "read_function", "description": "Read code.", "parameters": {
+        "type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}}]
+
+    def conversation(self):
+        return [{"role": "user", "text": "How does divide work?"},
+                {"role": "assistant", "text": "", "calls": [{"id": "c1", "name": "read_function", "args": {"name": "divide"}}],
+                 "raw": {"gemini_parts": [{"functionCall": {"name": "read_function", "args": {"name": "divide"}},
+                                           "thoughtSignature": "sig123"}]}},
+                {"role": "tool", "results": [{"id": "c1", "name": "read_function", "content": "  25 | return a / b;"}]}]
+
+    def test_gemini(self):
+        sent = []
+
+        def handler(req):
+            sent.append(json.loads(req.content))
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "final_answer", "args": {"answer": "It divides [calc.c:25]."}},
+                 "thoughtSignature": "sig456"}]}}]})
+        os.environ["GEMINI_API_KEY"] = AIZA_KEY
+        try:
+            p = GeminiProvider(httpx.Client(transport=httpx.MockTransport(handler)))
+            reply = p.send_tools("sys", self.conversation(), self.TOOLS, "gemini-2.5-flash", 100, force="final_answer")
+        finally:
+            os.environ.pop("GEMINI_API_KEY", None)
+        body = sent[0]
+        self.assertEqual(body["tools"][0]["functionDeclarations"][0]["name"], "read_function")
+        self.assertEqual(body["toolConfig"]["functionCallingConfig"], {"mode": "ANY", "allowedFunctionNames": ["final_answer"]})
+        self.assertEqual(body["contents"][1]["parts"][0]["thoughtSignature"], "sig123")   # sent back unchanged
+        self.assertEqual(body["contents"][2]["parts"][0]["functionResponse"],
+                         {"name": "read_function", "response": {"content": "  25 | return a / b;"}})
+        self.assertEqual(reply.calls[0]["name"], "final_answer")
+        self.assertEqual(reply.raw["gemini_parts"][0]["thoughtSignature"], "sig456")
+
+    def test_groq(self):
+        from app.services.llm import GroqProvider
+        sent = []
+
+        def handler(req):
+            sent.append(json.loads(req.content))
+            return httpx.Response(200, json={"choices": [{"message": {"content": None, "tool_calls": [
+                {"id": "t9", "type": "function", "function": {"name": "find_callers", "arguments": '{"name": "divide"}'}}]}}]})
+        p = GroqProvider(httpx.Client(transport=httpx.MockTransport(handler)))
+        reply = p.send_tools("sys", self.conversation(), self.TOOLS, "llama", 100)
+        msgs = sent[0]["messages"]
+        self.assertEqual(msgs[2]["tool_calls"][0]["function"], {"name": "read_function", "arguments": '{"name": "divide"}'})
+        self.assertEqual(msgs[3], {"role": "tool", "tool_call_id": "c1", "content": "  25 | return a / b;"})
+        self.assertEqual(sent[0]["tool_choice"], "auto")
+        self.assertEqual(reply.calls, [{"id": "t9", "name": "find_callers", "args": {"name": "divide"}}])
+
+    def test_anthropic(self):
+        from app.services.llm import AnthropicProvider
+        sent = []
+
+        def handler(req):
+            sent.append(json.loads(req.content))
+            return httpx.Response(200, json={"content": [{"type": "text", "text": "Let me check."},
+                                                         {"type": "tool_use", "id": "tu1", "name": "find_callers",
+                                                          "input": {"name": "divide"}}]})
+        p = AnthropicProvider(httpx.Client(transport=httpx.MockTransport(handler)))
+        reply = p.send_tools("sys", self.conversation(), self.TOOLS, "claude", 100)
+        msgs = sent[0]["messages"]
+        self.assertEqual(msgs[1]["content"][0], {"type": "tool_use", "id": "c1", "name": "read_function",
+                                                  "input": {"name": "divide"}})
+        self.assertEqual(msgs[2]["content"][0]["type"], "tool_result")
+        self.assertEqual(sent[0]["tools"][0]["input_schema"]["required"], ["name"])
+        self.assertEqual((reply.text, reply.calls[0]["name"]), ("Let me check.", "find_callers"))
 
 
 class GlossaryTest(unittest.TestCase):
