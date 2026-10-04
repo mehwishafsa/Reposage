@@ -1,0 +1,16 @@
+{
+  "name": "reposage",
+  "owner": {
+    "name": "Mehwish Afsa"
+  },
+  "metadata": {
+    "description": "RepoSage: a knowledge graph of your codebase, inside Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "reposage",
+      "source": "./",
+      "description": "Scan a repo into a knowledge graph (.reposage/graph.json) and explore it with slash commands."
+    }
+  ]
+}

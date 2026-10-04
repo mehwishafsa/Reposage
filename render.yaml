@@ -1,0 +1,27 @@
+# Render Blueprint for the RepoSage web app (free plan).
+# Render dashboard -> New -> Blueprint -> pick this repository.
+# Then add the API keys on the service's "Environment" page (never in code).
+services:
+  - type: web
+    name: reposage
+    runtime: docker
+    plan: free
+    branch: fullstack-app
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: AI_PROVIDER          # gemini | groq | anthropic | fake
+        value: gemini
+      - key: AI_FALLBACK
+        value: groq
+      - key: GEMINI_API_KEY
+        sync: false               # Render asks for the value; it is not stored in git
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY    # optional, leave empty
+        sync: false
+      - key: AI_DAILY_LIMIT       # stop before the free tier's daily limit
+        value: "900"
+      - key: MAX_PROJECTS_PER_HOUR
+        value: "30"

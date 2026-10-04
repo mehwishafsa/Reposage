@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   "Blocky" theme - RepoSage's own pixel style (all art drawn in CSS/SVG).
+   Headings use a pixel font; everything you read uses a clear body font.
+   ------------------------------------------------------------------ */
+
+@font-face {
+  font-family: "Pixel";
+  src: url("/fonts/PressStart2P.woff2") format("woff2");
+  font-display: swap;
+}
+
+:root {
+  --bg: #f1ead9;
+  --bg-dots: #e6dcc4;
+  --surface: #fffaf0;
+  --surface-2: #f3e9d4;
+  --ink: #2b2233;
+  --muted: #625571;
+  --edge: #2b2233;
+  --bevel-hi: rgba(255, 255, 255, 0.85);
+  --bevel-lo: rgba(43, 34, 51, 0.16);
+  --drop: rgba(43, 34, 51, 0.22);
+  --grass: #4f9a33;
+  --grass-hi: #86cc62;
+  --grass-lo: #2d6719;
+  --gold: #ffd24a;
+  --gold-ink: #7a5300;
+  --sky: #cfeeff;
+  --stone: #8f8a80;
+  --code-bg: #2b2233;
+  --code-ink: #f4efe6;
+  --link: #2f5f9a;
+  --danger: #b5523b;
+  --c-py: #3f6fa8;
+  --c-js: #c99a06;
+  --c-ts: #2f7fb8;
+  --c-java: #b5523b;
+  --c-c: #7a4fa0;
+  --hl-strong: color-mix(in srgb, #ffd24a 45%, transparent);
+  --hl-scope: color-mix(in srgb, #ffd24a 14%, transparent);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #19141f; --bg-dots: #221b2a; --surface: #2b2233; --surface-2: #362b41;
+    --ink: #f4efe6; --muted: #c9bdd6; --edge: #0b080e;
+    --bevel-hi: rgba(255, 255, 255, 0.12); --bevel-lo: rgba(0, 0, 0, 0.35); --drop: rgba(0, 0, 0, 0.45);
+    --grass: #5aa33c; --grass-hi: #8fd46b; --grass-lo: #2f6b1b; --gold: #ffd24a; --gold-ink: #ffe9a6;
+    --sky: #23324a; --stone: #9a958b; --code-bg: #120e16; --code-ink: #f4efe6; --link: #8cc4ff; --danger: #ff8f75;
+    --c-py: #6c9de0; --c-js: #f0c33c; --c-ts: #5fb0e8; --c-java: #e98466; --c-c: #b48ae0;
+    --hl-strong: rgba(255, 210, 74, 0.2); --hl-scope: rgba(255, 210, 74, 0.07);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #19141f; --bg-dots: #221b2a; --surface: #2b2233; --surface-2: #362b41;
+  --ink: #f4efe6; --muted: #c9bdd6; --edge: #0b080e;
+  --bevel-hi: rgba(255, 255, 255, 0.12); --bevel-lo: rgba(0, 0, 0, 0.35); --drop: rgba(0, 0, 0, 0.45);
+  --grass: #5aa33c; --grass-hi: #8fd46b; --grass-lo: #2f6b1b; --gold: #ffd24a; --gold-ink: #ffe9a6;
+  --sky: #23324a; --stone: #9a958b; --code-bg: #120e16; --code-ink: #f4efe6; --link: #8cc4ff; --danger: #ff8f75;
+  --c-py: #6c9de0; --c-js: #f0c33c; --c-ts: #5fb0e8; --c-java: #e98466; --c-c: #b48ae0;
+  --hl-strong: rgba(255, 210, 74, 0.2); --hl-scope: rgba(255, 210, 74, 0.07);
+  color-scheme: dark;
+}
+
+@layer base {
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--bg-dots) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font: 16px/1.6 "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+a { color: var(--link); }
+code, pre, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; }
+
+}
+
+@layer components {
+.pixel { font-family: "Pixel", ui-monospace, monospace; letter-spacing: 0.02em; line-height: 1.5; }
+
+/* A chunky block: dark outline, light top-left bevel, shadow bottom-right. */
+.tile {
+  background: var(--surface);
+  border: 3px solid var(--edge);
+  box-shadow: inset 3px 3px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo), 5px 5px 0 var(--drop);
+}
+.tile-flat { background: var(--surface-2); border: 3px solid var(--edge); box-shadow: inset 2px 2px 0 var(--bevel-hi); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  font: 600 15px/1.2 inherit; font-family: inherit;
+  padding: 0.7rem 1.1rem; cursor: pointer; color: var(--ink);
+  background: var(--surface-2); border: 3px solid var(--edge);
+  box-shadow: inset 2px 2px 0 var(--bevel-hi), inset -3px -3px 0 var(--bevel-lo), 3px 3px 0 var(--drop);
+  transition: transform 0.05s;
+}
+.btn:hover { filter: brightness(1.05); }
+.btn:active { transform: translate(2px, 2px); box-shadow: inset 2px 2px 0 var(--bevel-lo); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn-go { background: var(--grass); color: #fff; box-shadow: inset 3px 3px 0 var(--grass-hi), inset -3px -3px 0 var(--grass-lo), 3px 3px 0 var(--drop); }
+.btn-gold { background: var(--gold); color: #2b2233; box-shadow: inset 3px 3px 0 #fff0a8, inset -3px -3px 0 #c99a06, 3px 3px 0 var(--drop); }
+.btn:focus-visible, .tab:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .focusable:focus-visible {
+  outline: 3px solid var(--gold); outline-offset: 2px;
+}
+
+.tab { padding: 0.6rem 0.9rem; border: 3px solid var(--edge); background: var(--surface-2); cursor: pointer; color: var(--muted); font-weight: 600; }
+.tab[aria-selected="true"] { background: var(--grass); color: #fff; box-shadow: inset 2px 2px 0 var(--grass-hi), inset -2px -2px 0 var(--grass-lo); }
+
+.field { width: 100%; background: var(--surface); color: var(--ink); border: 3px solid var(--edge); padding: 0.65rem 0.8rem; font: inherit; box-shadow: inset 3px 3px 0 var(--bevel-lo); }
+textarea.field { font-family: ui-monospace, Consolas, Menlo, monospace; font-size: 14px; line-height: 1.5; }
+
+.chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.55rem; border: 2px solid var(--edge); background: var(--surface-2); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.muted { color: var(--muted); }
+
+.notice { border: 3px dashed var(--gold-ink); background: color-mix(in srgb, var(--gold) 22%, var(--surface)); padding: 0.6rem 0.85rem; }
+
+/* Loading screen: blocks drop into the progress bar one by one. */
+@keyframes hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+@keyframes drop-in { from { transform: translateY(-18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes blink { 50% { opacity: 0.25; } }
+.hop { animation: hop 0.7s steps(4) infinite; }
+.drop-in { animation: drop-in 0.25s steps(3) both; }
+.dots::after { content: "..."; animation: blink 1s steps(2) infinite; }
+@media (prefers-reduced-motion: reduce) { .hop, .drop-in, .dots::after { animation: none; } }
+
+.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--gold) 55%, var(--surface)); } }
+
+/* Flowchart: the chosen box gets a thick outline in the "you are here" colour. */
+.flowchart svg { height: auto; display: block; margin: 0 auto; }
+.flowchart g.node:focus { outline: none; }
+.flowchart g.node:focus-visible > :is(rect, polygon, path, circle) { stroke: var(--gold-ink) !important; stroke-width: 5px !important; }
+.flowchart g.node:hover > :is(rect, polygon, path, circle) { filter: brightness(1.06); }
+
+/* A citation in a chat answer: a small clickable code "tag". */
+.cite { display: inline-flex; align-items: center; gap: 2px; margin: 0 2px; padding: 0 6px; cursor: pointer;
+        font: 600 12.5px/1.6 ui-monospace, Consolas, Menlo, monospace; color: var(--ink);
+        background: color-mix(in srgb, var(--gold) 40%, var(--surface)); border: 2px solid var(--edge);
+        box-shadow: 2px 2px 0 var(--drop); vertical-align: 1px; }
+.cite::before { content: "▸"; color: var(--gold-ink); }
+.cite:hover { background: var(--gold); }
+.cite:focus-visible { outline: 3px solid var(--gold-ink); outline-offset: 1px; }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "reposage",
+  "version": "0.6.2",
+  "description": "Build a knowledge graph of your codebase with Tree-sitter, then explore it: scan, ask questions, explain files, see what a change affects, and onboard new teammates.",
+  "author": {
+    "name": "Mehwish Afsa"
+  },
+  "homepage": "https://github.com/mehwishafsa/reposage",
+  "repository": "https://github.com/mehwishafsa/reposage",
+  "license": "MIT",
+  "keywords": [
+    "knowledge-graph",
+    "tree-sitter",
+    "code-understanding",
+    "rag",
+    "onboarding"
+  ]
+}
