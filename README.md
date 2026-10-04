@@ -165,8 +165,8 @@ Inspired by [Understand Anything](https://github.com/Egonex-AI/Understand-Anythi
 
 ## Author
 
-**[Your Name]**
-- LinkedIn: [linkedin.com/in/your-profile](https://www.linkedin.com/in/your-profile)
-- Email: [your.email@example.com](mailto:your.email@example.com)
+**Mehwish Afsa**
+- LinkedIn: [linkedin.com/in/mehwishafsa](https://www.linkedin.com/in/mehwishafsa/)
+- Email: [mehwishafsa44@gmail.com](mailto:mehwishafsa44@gmail.com)
 
 Released under the [MIT License](LICENSE).
